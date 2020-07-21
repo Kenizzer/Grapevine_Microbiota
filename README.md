@@ -11,8 +11,9 @@ Table of markers used within the study.
 | 16s      | 515F    | GTGYCAGCMGCCGCGGTAA     | 806R    | GGACTACNVGGGTWTCTAAT | 390       | Parada *et al.* 2016 and Apprill *et al.* 2015 |
 | trnL     | ITS1f   | CTTGGTCATTTAGAGGAAGTAA  | ITS2    | GCTGCGTTCTTCATCGATGC | 250–600   | Smith and Peay 2014 and White *et al.* 1990    |
 
-## Experimental Design
+## Experimental and Sampling Design
 
+![Image of experimental and sampling design](https://github.com/Kenizzer/Grapevine_microbiome/blob/master/Experimenetal_design_image/experimental_design_and_sampling_figure.png)
 
 ## Analysis 
 

@@ -13,6 +13,8 @@ Table of markers used within the study.
 
 ## Experimental and Sampling Design
 
+**A)** Vineyard layout at the University of Missouri Southwest Research Center in Mount Vernon, MO consisting of 288 vines grafted to one of three rootstocks (‘SO4’, Selection Oppenheim 4; ‘3309C’, 3309 Courdec; ‘1103P’, 1103 Paulson) or ungrafted (UG). Each colored cell represents four vines; irrigation treatments (F, Full replacement of evapotranspiration; I, reduced replacement; N, unirrigated) and experimental blocks are listed along the bottom and top of the grid, respectively. **B)** Depiction of a grafted grapevine with sampling comparments highlighted, numbers correspond to legend (left).
+
 ![Image of experimental and sampling design](https://github.com/Kenizzer/Grapevine_microbiome/blob/master/Experimenetal_design_image/experimental_design_and_sampling_figure.png)
 
 ## Analysis 

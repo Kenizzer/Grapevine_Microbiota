@@ -9,17 +9,21 @@ library("corncob")
 library("ALDEx2")
 library("anomalize")
 library("emmeans")
+library("patchwork")
 
-# Theme set and Color Palette
-theme_set(theme_pubr())
+# Theme set and Color Palettes
+theme_set(theme_pubr(base_size = 16))
 zoe_palette <- c("gray","#1b9e77", "#7570b3",  "#e6ab02")
+compartment_pallete <- c("#5a1991", "#139d08", "#f5b784", "#5c3c0d") #https://lospec.com/palette-list/famicube
 
 # Functions
+
+# Calculate alpha diversity metrics and put them into a dataframe with the sample metadata
 Alpha_div_metrics <- function(phyloseq_obj, its_or_16s) {
   if (its_or_16s == "16s"){
-    # Calculate alpha diversity metrics and put them into a dataframe with the sample metadata
+    # For 16s will also calculate faith's phylogenetic diversity metric using Picante package
     Alpha_16s <- estimate_richness(phyloseq_obj)
-    R <- picante::pd(samp = t(otu_table(phyloseq_obj)), tree = phy_tree(phyloseq_obj), include.root = FALSE)
+    R <- picante::pd(samp = as(t(otu_table(rare_physeq_16s)), "matrix"), tree = phy_tree(phyloseq_obj), include.root = FALSE)
     Alpha_16s <- cbind(Alpha_16s, "Faithpd" = R$PD, as.data.frame(phyloseq_obj@sam_data))
   } else if(its_or_16s == "its"){
     # Calculate alpha diversity metrics and put them into a dataframe with the sample metadata
@@ -28,95 +32,47 @@ Alpha_div_metrics <- function(phyloseq_obj, its_or_16s) {
   }
 }
 
+# Create taxonomic barplot for ITS
 PLOT_BP_ITS_ROOTSTOCK <- function(plot_data) {
-  ggplot(plot_data, aes(Tissue, y= value, fill = variable))+
+  ggplot(plot_data, aes(Compartment, y= value, fill = variable))+
     geom_bar(stat = "identity", color = "black") +
     ylab("Relative abundance") +
     theme(legend.position = "right", legend.key.size = unit(0.75, "cm"), legend.text=element_text(size=12), legend.title=element_text(size=24)) +
-    scale_fill_manual(name ="Fungal class", values=taxapallete, labels = c(expression(italic("Dothideomycetes")), expression(italic("Leotiomycetes")), expression(italic("Pezizomycetes")), expression(italic("Saccharomycetes")), expression(italic("Sordariomycetes")), expression(italic("Agaricomycetes")), expression(italic("Cystobasidiomycetes")), expression(italic("Microbotryomycetes")), expression(italic("Tremellomycetes")), expression(italic("Glomeromycetes")), expression(italic("Paraglomeromycetes")), expression(italic("Mortierellomycetes")), "Low abundance taxa")) +
+    scale_fill_manual(name ="Fungal class", values=taxapallete_ITS, labels = c(expression(italic("Agaricomycetes")), expression(italic("Cystobasidiomycetes")), expression(italic("Dothideomycetes")), expression(italic("Glomeromycetes")), expression(italic("Leotiomycetes")), expression(italic("Microbotryomycetes")), expression(italic("Mortierellomycetes")), expression(italic("Paraglomeromycetes")), expression(italic("Pezizomycetes")), expression(italic("Saccharomycetes")), expression(italic("Sordariomycetes")), expression(italic("Tremellomycetes")), "Low abundance taxa")) +
     theme(legend.text.align = 0)
 }
 
+# Create taxonomic barplot for 16S
 PLOT_BP_16S_ROOTSTOCK <- function(plot_data) {
-  ggplot(plot_data, aes(Tissue, y= value, fill = variable))+
+  ggplot(plot_data, aes(Compartment, y= value, fill = variable))+
     geom_bar(stat = "identity", color = "black") +
     ylab("Relative abundance") +
     theme(legend.position = "right", legend.key.size = unit(0.75, "cm"), legend.text=element_text(size=12), legend.title=element_text(size=24)) +
-    scale_fill_manual(name ="Bacterial phylum", values=taxapallete, labels = c(expression(italic("Acidobacteria")), expression(italic("Actinobacteria")), expression(italic("Armatimonadetes")), expression(italic("Bacteroidetes")), expression(italic("Chloroflexi")), expression(italic("Deinococcus-Thermus")), expression(italic("Firmicutes")), expression(italic("Gemmatimonadetes")), expression(italic("Latescibacteria")), expression(italic("Nitrospirae")), expression(italic("Planctomycetes")), expression(italic("Proteobacteria")), expression(italic("Rokubacteria")), expression(italic("Verrucomicrobia")), "Low abundance taxa")) +
+    scale_fill_manual(name ="Bacterial phylum", values=taxapallete_16S, labels = c(expression(italic("Acidobacteria")), expression(italic("Actinobacteria")), expression(italic("Armatimonadetes")), expression(italic("Bacteroidetes")), expression(italic("Chloroflexi")), expression(italic("Deinococcus-Thermus")), expression(italic("Firmicutes")), expression(italic("Gemmatimonadetes")), expression(italic("Latescibacteria")), expression(italic("Nitrospirae")), expression(italic("Planctomycetes")), expression(italic("Proteobacteria")), expression(italic("Rokubacteria")), expression(italic("Verrucomicrobia")), "Low abundance taxa")) +
     theme(legend.text.align = 0)
 }
 
-PLOT_PCoA <- function(plot_data, distance_matrix, axis1, axis2) {
+# Plot PCoA using ggplot from phyloseq ordination, can color points by rootstock if desired
+PLOT_PCoA <- function(plot_data, distance_matrix, axis1, axis2, split_by_rootstock = TRUE) {
   temp <- plot_ordination(plot_data, distance_matrix, axes = c(axis1,axis2))
-  plot_ordination(plot_data, distance_matrix, axes = c(axis1,axis2)) +
-    geom_point(aes(fill=Rootstock, shape=TissueType), size = 3) +
-    scale_shape_manual(values=c(24, 22, 23, 21)) +  
-    scale_fill_manual(name = "Rootstock", values=zoe_palette) +
-    labs(shape= "Tissue", color= "Rootstock") +
-    xlab(paste("PCoA", axis1, sub(".*\\ ", "", temp$labels$x))) +
-    ylab(paste("PCoA", axis2, sub(".*\\ ", "", temp$labels$y))) +
-    guides(fill = guide_legend(override.aes = list(shape = 21)), shape = guide_legend(override.aes = list(fill = "black")))
-}
-
-PLOT_OTU_corncob_anomalized <- function(otu_number, taxa_lvl = 3, grp_by = "Rootstock",  not_plot1 = FALSE, not_plot2 = FALSE, not_plot3 = FALSE) {
-  # Function that will given an *otu_number* make a plot that is divded by tissue and rootstock (or other factor if specifed in grp_by).
-  # Before plotting the data column is run through anomalize to remove outliers that interfer with plot interpretation.
-  # Will assign the title of the plot as user specified taxonomic level (default is 3, i.e. Class)
-  # 1 = Kingdom | 2 = Phylum | 3 = Class | 4 = Order | 5 = Family | 6 = Genus | 7 = Species
-  # Additionally the user can control which tissues to display by providing the "name" of tissues to remove before plotting (default is plot all).
-  
-  # Create dataframe and coerce it into the correct form
-  TEMP <- as.data.frame(physeq_its@otu_table[otu_number,])
-  TEMP_long <- t(TEMP)
-  TEMP_long_2 <- cbind(TEMP_long, physeq_its@sam_data)
-  # Removing outliers that are over 5 standard devations away from the mean
-  column_name <- colnames(TEMP_long_2[1])
-  x <- anomalize(as_tibble(TEMP_long_2), target=column_name, method='iqr', alpha=0.03, max_anoms=0.1)
-  d <- x[x$anomaly != 'Yes',]
-  d <- as.data.frame(d)
-  # Generate varible to hold ggtitle
-  X <- physeq_its@tax_table[otu_number,]
-  X <- as.data.frame(X)
-  if (taxa_lvl == 1){
-    Y <- paste("ASV", otu_number, " -", " Kingdom:", X[1,1], sep = "")
-  } else if(taxa_lvl == 2){
-    Y <- paste("ASV", otu_number, " -"," Phylum:",X[1,2], sep = "")
-  } else if(taxa_lvl == 3){
-    Y <- paste("ASV", otu_number, " -"," Class:",X[1,3], sep = "")
-  } else if(taxa_lvl == 4){
-    Y <- paste("ASV", otu_number, " -"," Order:",X[1,4], sep = "")
-  } else if(taxa_lvl == 5){
-    Y <- paste("ASV", otu_number, " -"," Family:",X[1,5], sep = "")
-  } else if(taxa_lvl == 6){
-    Y <- paste("ASV", otu_number, " -"," Genus:",X[1,6], sep = "")
-  } else if(taxa_lvl == 7){
-    Y <- paste("ASV", otu_number, " -"," Species:",X[1,7], sep = "")
+  if (split_by_rootstock == TRUE){
+    plot_ordination(plot_data, distance_matrix, axes = c(axis1,axis2)) +
+      geom_point(aes(fill=Rootstock, shape=Compartment), size = 3) +
+      scale_shape_manual(values=c(24, 22, 23, 21)) +  
+      scale_fill_manual(name = "Rootstock", values=zoe_palette) +
+      labs(shape= "Compartment", color= "Rootstock") +
+      xlab(paste("PCoA", axis1, sub(".*\\ ", "", temp$labels$x))) +
+      ylab(paste("PCoA", axis2, sub(".*\\ ", "", temp$labels$y))) +
+      guides(fill = guide_legend(override.aes = list(shape = 21)), shape = guide_legend(override.aes = list(fill = "black")))
+  } else if(split_by_rootstock == FALSE){
+    temp2 <- plot_ordination(plot_data, distance_matrix, axes = c(axis1,axis2), justDF = TRUE)
+    ggplot(temp2, aes(x=Axis.1, y= Axis.2)) + geom_point(aes(fill = Compartment), size = 10, color="black",pch=21, alpha=0.8) +
+      scale_fill_manual(name = "Compartment", values=compartment_pallete) +
+      #scale_shape_manual(values=c(15, 1, 17, 5)) +  
+      labs(shape= "Compartment") +
+      xlab(paste("PCoA", axis1, sub(".*\\ ", "", temp$labels$x))) +
+      ylab(paste("PCoA", axis2, sub(".*\\ ", "", temp$labels$y)))
   }
-  # Plot
-  # Plots all tissues.
-  if (not_plot1 == FALSE){
-    ggplot(d, aes_string("TissueType", d[,1], fill= grp_by)) + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + scale_y_continuous(name="Abundance") + xlab("Tissue") + theme(legend.position="right", axis.title = element_text(size = 14), axis.text = element_text(size = 12), plot.title = element_text(size=22)) + ggtitle(Y) 
-  } else if (not_plot1 != FALSE){
-    # Plots tissues that are no specified to be removed from the dataframe prior to plotting.
-    d <- d[which(d$TissueType != not_plot1 & d$TissueType != not_plot2 & d$TissueType != not_plot3),]
-    ggplot(d, aes_string("TissueType", d[,1], fill= grp_by)) + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + scale_y_continuous(name="Abundance") + xlab("Tissue") + theme(legend.position="right", axis.title = element_text(size = 14), axis.text = element_text(size = 12), plot.title = element_text(size=22)) + ggtitle(Y) 
-  }
-}
-
-# Given a phyloseq object, plot the ASV that was detemined by DESeq2 to be differentailly
-# Abundant
-plot_deseq2_DiffAbunMicob <- function(physeq_obj, ASV_number){
-  # Create dataframe and coerce it into the correct form
-  TEMP <- as.data.frame(physeq_its@otu_table[ASV_number,])
-  TEMP_long <- t(TEMP)
-  TEMP_long_2 <- cbind(TEMP_long, physeq_its@sam_data)
-  # Removing outliers that are over 5 standard devations away from the mean
-  column_name <- colnames(TEMP_long_2[1])
-  x <- anomalize(as_tibble(TEMP_long_2), target=column_name, method='iqr', alpha=0.03, max_anoms=0.1)
-  d <- x[x$anomaly != 'Yes',]
-  d <- as.data.frame(d)
-  # Generate varible to hold ggtitle
-  ggplot(d, aes(Tissue, d[,1], fill= Rootstock)) + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + scale_y_continuous(name="Abundance") + xlab("Tissue") + theme(legend.position="right", axis.title = element_text(size = 14), axis.text = element_text(size = 12), plot.title = element_text(size=22))
 }
 
 # Given a phyloseq object, return a dataframe of the sample metadata 
@@ -126,42 +82,27 @@ pssd2veg <- function(physeq) {
   return(as(sd,"data.frame"))
 }
 
-# Given a phyloseq object, plot the ASV that was detemined by DESeq2 to be differentailly
-# Abundant
-plot_deseq2_DiffAbunMicob <- function(physeq_obj, ASV_number){
-  
-  
-  temp_sample_tab <- pssd2veg(physeq_obj)
-  otu_matrix <- as(otu_table(physeq_obj), "matrix")
-  TEMP <- data.frame(ASV_count = otu_matrix[ASV_number,])
-  TEMP2<- cbind(temp_sample_tab, TEMP)
-  ggplot(TEMP2, aes(Tissue, ASV_count, fill= Rootstock)) + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + scale_y_continuous(name="Abundance") + xlab("Tissue") + theme(legend.position="right", axis.title = element_text(size = 14), axis.text = element_text(size = 12), plot.title = element_text(size=22))
-}
+# Set WD (Change as needed)
+setwd("/PATH/TO/WorkingDirectory")
 
+##### 1.0) Diversity ANALYSES #####
+##### 1.1) Alpha Diversity #####
 
-# Home PC Windows        setwd("C:/Users/Kenizzer/OneDrive - Donald Danforth Plant Science Center/Grad School/Disseration/Chapter 1/Analysis")
-# Laptop                 setwd("C:/Users/Joel/OneDrive - Donald Danforth Plant Science Center/Grad School/Disseration/Chapter 1")
-# Office PC linux        setwd("/media/kenizzer/Storage disk/argonne_sequencing/")
-
-##### 1.0) RAREFIED ANALYSES #####
-#Bacterial samples (i.e. 16s) rarefied to 1500 reads
-#Fungal samples (i.e. ITS) rarefied to 5000 reads
-
-##### 1.1) Alpha Diversity plots #####
 # Load QIIME2 objects into a phyloseq class object.
 physeq_16s <- qza_to_phyloseq(features = '16s/ALL/filtered-table-no-mitochondria-no-chloroplast.qza', tree = '16s/ALL/rooted-tree.qza', taxonomy = '16s/ALL/taxonomy.qza', metadata = '16s/ALL/16s_noMockorPosorNeg_metadata.tsv', tmp="C:/tmp")
 physeq_its <- qza_to_phyloseq(features = 'ITS/ALL/filtered-nocontrol-trimmed-table.qza', taxonomy = 'ITS/ALL/taxonomy.qza', metadata = 'ITS/ALL/its_metadata_noControlsorWine.tsv', tmp="C:/tmp")
 
-# Recode factors OWN to Ungrafted.
+# Recode factors: OWN to Ungrafted and correct names of irrigation treatments.
 physeq_16s@sam_data$Rootstock <- recode_factor(physeq_16s@sam_data$Rootstock, OWN = "Ungrafted")
 physeq_its@sam_data$Rootstock <- recode_factor(physeq_its@sam_data$Rootstock, OWN = "Ungrafted")
 physeq_16s@sam_data$Irrigation <- recode_factor(physeq_16s@sam_data$Irrigation, none = "None", rdi = "RDI", full = "Full")
 physeq_its@sam_data$Irrigation <- recode_factor(physeq_its@sam_data$Irrigation, none = "None", rdi = "RDI", full = "Full")
 
-# Rarefy the samples to 1500 (required as this was not done in previously in QIIME).
+# Rarify bacterial (16s) samples to 1500.
 rare_physeq_16s <- rarefy_even_depth(physeq_16s, sample.size = 1500, replace = FALSE, rngseed = 10031993) 
 ### Removing 7 biological samples
-# Rarefy the samples to 5000 (required as this was not done in previously in QIIME).
+
+# Rarify fungal (ITS) samples to 5000.
 rare_physeq_its <- rarefy_even_depth(physeq_its, sample.size = 5000, replace = FALSE, rngseed = 10031993) 
 ### Removing 7 biological samples
 
@@ -169,109 +110,158 @@ rare_physeq_its <- rarefy_even_depth(physeq_its, sample.size = 5000, replace = F
 ALPHA_div_16s_rare <- Alpha_div_metrics(rare_physeq_16s, its_or_16s = "16s")
 ALPHA_div_its_rare <- Alpha_div_metrics(rare_physeq_its, its_or_16s = "its")
 
-# This tibble is used to place the significance letters at a consist hieght over each barplot
-labels_df <- tibble(Tissue=levels(ALPHA_div_16s_rare$Tissue), Mfphd=max(ALPHA_div_16s_rare$Faithpd) * 1.2, Mobso=max(ALPHA_div_16s_rare$Observed) * 1.2, Mshan=max(ALPHA_div_16s_rare$Shannon) * 1.2, Msimpinv = max(ALPHA_div_16s_rare$InvSimpson) * 1.2, Mobso_i=max(ALPHA_div_its_rare$Observed) * 1.2, Mshan_i=max(ALPHA_div_its_rare$Shannon) * 1.2, Msimpinv_i = max(ALPHA_div_its_rare$InvSimpson) * 1.2)
+# Means by Compartment
+as.data.frame(ALPHA_div_16s_rare %>% group_by(Compartment) %>% summarise(Observed = mean(Observed), Shannon = mean(Shannon), invSimpson = mean(InvSimpson)))
+as.data.frame(ALPHA_div_its_rare %>% group_by(Compartment) %>% summarise(Observed = mean(Observed), Shannon = mean(Shannon), invSimpson = mean(InvSimpson)))
 
-# Make plots 16S by tissue
-fphd_16s <- ggplot(ALPHA_div_16s_rare, aes(Tissue, Faithpd)) + geom_boxplot(outlier.shape = NA) + ggtitle("16S") + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Tissue") + ylab("Faith's phylogenetic diversity") + geom_text(data=labels_df, aes(Tissue, Mfphd, label=c("a","a","b","c")), size = 6)
-obso_16s <- ggplot(ALPHA_div_16s_rare, aes(Tissue, Observed)) + geom_boxplot(outlier.shape = NA) + ggtitle("16S") + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Tissue") + ylab("Observed ASVs") + geom_text(data=labels_df, aes(Tissue, Mobso, label=c("a","a","b","c")), size = 6)
-simpI_16s <- ggplot(ALPHA_div_16s_rare, aes(Tissue, InvSimpson)) + geom_boxplot(outlier.shape = NA) + ggtitle("16S") + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Tissue") + ylab(expression("Simpson's D"^-1)) + geom_text(data=labels_df, aes(Tissue, Msimpinv, label=c("a","a","b","c")), size = 6)
-shan_16s <- ggplot(ALPHA_div_16s_rare, aes(Tissue, Shannon)) + geom_boxplot(outlier.shape = NA) + ggtitle("16S") + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Tissue") + ylab("Shannon's index") + geom_text(data=labels_df, aes(Tissue, Mshan, label=c("a","a","b","c")), size = 6)
+# This tibble is used to place the significance letters at a consist height over each barplot
+labels_df <- tibble(Compartment=levels(ALPHA_div_16s_rare$Compartment), Mfphd=max(ALPHA_div_16s_rare$Faithpd) * 1.2, Mobso=max(ALPHA_div_16s_rare$Observed) * 1.2, Mshan=max(ALPHA_div_16s_rare$Shannon) * 1.2, Msimpinv = max(ALPHA_div_16s_rare$InvSimpson) * 1.2, Mobso_i=max(ALPHA_div_its_rare$Observed) * 1.2, Mshan_i=max(ALPHA_div_its_rare$Shannon) * 1.2, Msimpinv_i = max(ALPHA_div_its_rare$InvSimpson) * 1.2)
+
+# Make plots 16S by Compartment
+fphd_16s <- ggplot(ALPHA_div_16s_rare, aes(Compartment, Faithpd)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Compartment") + ylab("Faith's phylogenetic diversity") + geom_text(data=labels_df, aes(Compartment, Mfphd, label=c("a","a","b","c")), size = 6)
+obso_16s <- ggplot(ALPHA_div_16s_rare, aes(Compartment, Observed)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Compartment") + ylab("Observed ASVs") + geom_text(data=labels_df, aes(Compartment, Mobso, label=c("a","a","b","c")), size = 6)
+simpI_16s <- ggplot(ALPHA_div_16s_rare, aes(Compartment, InvSimpson)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Compartment") + ylab(expression("Simpson's D"^-1)) + geom_text(data=labels_df, aes(Compartment, Msimpinv, label=c("a","a","b","c")), size = 6)
+shan_16s <- ggplot(ALPHA_div_16s_rare, aes(Compartment, Shannon)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Compartment") + ylab("Shannon's index") + geom_text(data=labels_df, aes(Compartment, Mshan, label=c("a","a","b","c")), size = 6)
+
 # Tukey tests 16s for significance letters means in alpha diversity charts
-TukeyHSD(aov(Faithpd ~ Tissue, data = ALPHA_div_16s_rare), conf.level = 0.95)
-TukeyHSD(aov(Observed ~ Tissue, data = ALPHA_div_16s_rare), conf.level = 0.95)
-TukeyHSD(aov(InvSimpson ~ Tissue, data = ALPHA_div_16s_rare), conf.level = 0.95)
-TukeyHSD(aov(Shannon ~ Tissue, data = ALPHA_div_16s_rare), conf.level = 0.95)
-# Make plots ITS by Tissue
-obso_its <- ggplot(ALPHA_div_its_rare, aes(Tissue, Observed)) + geom_boxplot(outlier.shape = NA) + ggtitle("ITS") + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Tissue") + ylab("Observed ASVs") + geom_text(data=labels_df, aes(Tissue, Mobso_i, label=c("a","b","c","d")), size = 6)
-simpI_its <- ggplot(ALPHA_div_its_rare, aes(Tissue, InvSimpson)) + geom_boxplot(outlier.shape = NA) + ggtitle("ITS") + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Tissue") + ylab(expression("Simpson's D"^-1)) + geom_text(data=labels_df, aes(Tissue, Msimpinv_i, label=c("a","b","c","d")), size = 6)
-shan_its <- ggplot(ALPHA_div_its_rare, aes(Tissue, Shannon)) + geom_boxplot(outlier.shape = NA) + ggtitle("ITS") + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Tissue") + ylab("Shannon's index") + geom_text(data=labels_df, aes(Tissue, Mshan_i, label=c("a","b","c","d")), size = 6)
-# Tukey tests ITS for significance letters means in alpha diversity charts
-TukeyHSD(aov(Observed ~ Tissue, data = ALPHA_div_its_rare), conf.level = 0.95)
-TukeyHSD(aov(InvSimpson ~ Tissue, data = ALPHA_div_its_rare), conf.level = 0.95)
-TukeyHSD(aov(Shannon ~ Tissue, data = ALPHA_div_its_rare), conf.level = 0.95)
+TukeyHSD(aov(Faithpd ~ Compartment, data = ALPHA_div_16s_rare), conf.level = 0.95)
+TukeyHSD(aov(Observed ~ Compartment, data = ALPHA_div_16s_rare), conf.level = 0.95)
+TukeyHSD(aov(InvSimpson ~ Compartment, data = ALPHA_div_16s_rare), conf.level = 0.95)
+TukeyHSD(aov(Shannon ~ Compartment, data = ALPHA_div_16s_rare), conf.level = 0.95)
 
-# Make plots 16S by rootstock and tissue
-fphd_byR_T_16s <- ggplot(ALPHA_div_16s_rare, aes(Tissue, Faithpd, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + ggtitle("16S") + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Tissue") + ylab("Faith's phylogenetic diversity") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
-simpI_byR_T_16s <- ggplot(ALPHA_div_16s_rare, aes(Tissue, InvSimpson, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + ggtitle("16S") + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Tissue") + ylab(expression("Simpson's D"^-1)) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
-obso_byR_T_16s <- ggplot(ALPHA_div_16s_rare, aes(Tissue, Observed, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + ggtitle("16S") + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Tissue") + ylab("Observed ASVs") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
-shan_byR_T_16s <- ggplot(ALPHA_div_16s_rare, aes(Tissue, Shannon, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + ggtitle("16S") + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Tissue") + ylab("Shannon's index") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
-# Make plots ITS by rootstock and tissue
-simpI_byR_T_its <- ggplot(ALPHA_div_its_rare, aes(Tissue, InvSimpson, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + ggtitle("ITS") + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Tissue") + ylab(expression("Simpson's D"^-1)) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
-obso_byR_T_its <- ggplot(ALPHA_div_its_rare, aes(Tissue, Observed, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + ggtitle("ITS") + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Tissue") + ylab("Observed ASVs") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
-shan_byR_T_its <- ggplot(ALPHA_div_its_rare, aes(Tissue, Shannon, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + ggtitle("ITS") + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Tissue") + ylab("Shannon's index") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
+#Make plots ITS by Compartment
+obso_its <- ggplot(ALPHA_div_its_rare, aes(Compartment, Observed)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Compartment") + ylab("Observed ASVs") + geom_text(data=labels_df, aes(Compartment, Mobso_i, label=c("a","b","c","d")), size = 6)
+simpI_its <- ggplot(ALPHA_div_its_rare, aes(Compartment, InvSimpson)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Compartment") + ylab(expression("Simpson's D"^-1)) + geom_text(data=labels_df, aes(Compartment, Msimpinv_i, label=c("a","b","a","c")), size = 6)
+shan_its <- ggplot(ALPHA_div_its_rare, aes(Compartment, Shannon)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Compartment") + ylab("Shannon's index") + geom_text(data=labels_df, aes(Compartment, Mshan_i, label=c("a","b","c","d")), size = 6)
+
+# Tukey tests ITS for significance letters means in alpha diversity charts
+TukeyHSD(aov(Observed ~ Compartment, data = ALPHA_div_its_rare), conf.level = 0.95)
+TukeyHSD(aov(InvSimpson ~ Compartment, data = ALPHA_div_its_rare), conf.level = 0.95)
+TukeyHSD(aov(Shannon ~ Compartment, data = ALPHA_div_its_rare), conf.level = 0.95)
+
+# Make plots 16S by Rootstock and Compartment
+fphd_byR_T_16s <- ggplot(ALPHA_div_16s_rare, aes(Compartment, Faithpd, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Compartment") + ylab("Faith's phylogenetic diversity") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
+simpI_byR_T_16s <- ggplot(ALPHA_div_16s_rare, aes(Compartment, InvSimpson, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Compartment") + ylab(expression("Simpson's D"^-1)) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
+obso_byR_T_16s <- ggplot(ALPHA_div_16s_rare, aes(Compartment, Observed, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Compartment") + ylab("Observed ASVs") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
+shan_byR_T_16s <- ggplot(ALPHA_div_16s_rare, aes(Compartment, Shannon, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Compartment") + ylab("Shannon's index") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
+
+# Make plots ITS by Rootstock and Compartment
+simpI_byR_T_its <- ggplot(ALPHA_div_its_rare, aes(Compartment, InvSimpson, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Compartment") + ylab(expression("Simpson's D"^-1)) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
+obso_byR_T_its <- ggplot(ALPHA_div_its_rare, aes(Compartment, Observed, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Compartment") + ylab("Observed ASVs") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
+shan_byR_T_its <- ggplot(ALPHA_div_its_rare, aes(Compartment, Shannon, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + theme(plot.title = element_text(hjust = 0.5)) + xlab ("Compartment") + ylab("Shannon's index") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette)
 
 ##### 1.2) Linear models #####
+
 # Set contrasts to deviation coding for factors
 options(contrasts = c("contr.sum", "contr.sum"))
+
 # Assign levels to be used as reference
+# For Rootstock = Ungrafted
+# For Compartment = Soil
+# For Irrigation = None
 ALPHA_div_16s_rare$Rootstock <- relevel(ALPHA_div_16s_rare$Rootstock, ref = "Ungrafted")
 ALPHA_div_16s_rare$Irrigation <- relevel(ALPHA_div_16s_rare$Irrigation, ref = "None")
-ALPHA_div_16s_rare$Tissue <- relevel(ALPHA_div_16s_rare$Tissue, ref = "Soil")
+ALPHA_div_16s_rare$Compartment <- relevel(ALPHA_div_16s_rare$Compartment, ref = "Soil")
 ALPHA_div_its_rare$Rootstock <- relevel(ALPHA_div_its_rare$Rootstock, ref = "Ungrafted")
 ALPHA_div_its_rare$Irrigation <- relevel(ALPHA_div_its_rare$Irrigation, ref = "None")
-ALPHA_div_its_rare$Tissue <- relevel(ALPHA_div_its_rare$Tissue, ref = "Soil")
+ALPHA_div_its_rare$Compartment <- relevel(ALPHA_div_its_rare$Compartment, ref = "Soil")
 
-# linear models 16S FULL
-fphd_16s_fit_full <- lm(Faithpd ~ Tissue*Rootstock*Irrigation + Block, data = ALPHA_div_16s_rare)
-simpI_16s_fit_full <- lm(InvSimpson ~ Tissue*Rootstock*Irrigation + Block, data = ALPHA_div_16s_rare)
-obso_16s_fit_full <- lm(Observed ~ Tissue*Rootstock*Irrigation + Block, data = ALPHA_div_16s_rare)
-shan_16s_fit_full <- lm(Shannon ~ Tissue*Rootstock*Irrigation + Block, data = ALPHA_div_16s_rare)
+# Linear models 16S FULL
+fphd_16s_fit_full <- lm(Faithpd ~ Compartment*Rootstock*Irrigation + Block, data = ALPHA_div_16s_rare)
+simpI_16s_fit_full <- lm(InvSimpson ~ Compartment*Rootstock*Irrigation + Block, data = ALPHA_div_16s_rare)
+obso_16s_fit_full <- lm(Observed ~ Compartment*Rootstock*Irrigation + Block, data = ALPHA_div_16s_rare)
+shan_16s_fit_full <- lm(Shannon ~ Compartment*Rootstock*Irrigation + Block, data = ALPHA_div_16s_rare)
 
+# Print results, copied to Excel
 as.data.frame(Anova(fphd_16s_fit_full, type = "III"))
 as.data.frame(Anova(simpI_16s_fit_full, type = "III"))
 as.data.frame(Anova(obso_16s_fit_full, type = "III"))
 as.data.frame(Anova(shan_16s_fit_full, type = "III"))
 
-#linear models ITS FULL
-simpI_its_fit_full <- lm(InvSimpson ~ Tissue*Rootstock*Irrigation + Block, data = ALPHA_div_its_rare)
-obso_its_fit_full <- lm(Observed ~ Tissue*Rootstock*Irrigation + Block, data = ALPHA_div_its_rare)
-shan_its_fit_full <- lm(Shannon ~ Tissue*Rootstock*Irrigation + Block, data = ALPHA_div_its_rare)
+# Posthoc testing
+pairs(emmeans(fphd_16s_fit_full, ~ Compartment))
+pairs(emmeans(fphd_16s_fit_full, ~ Block))
+pairs(emmeans(simpI_16s_fit_full, ~ Compartment))
+pairs(emmeans(simpI_16s_fit_full, ~ Block))
+pairs(emmeans(obso_16s_fit_full, ~ Compartment))
+pairs(emmeans(shan_16s_fit_full, ~ Compartment))
 
+# Linear models ITS FULL
+simpI_its_fit_full <- lm(InvSimpson ~ Compartment*Rootstock*Irrigation + Block, data = ALPHA_div_its_rare)
+obso_its_fit_full <- lm(Observed ~ Compartment*Rootstock*Irrigation + Block, data = ALPHA_div_its_rare)
+shan_its_fit_full <- lm(Shannon ~ Compartment*Rootstock*Irrigation + Block, data = ALPHA_div_its_rare)
+
+# Print results, copied to Excel
 as.data.frame(Anova(simpI_its_fit_full, type = "III"))
 as.data.frame(Anova(obso_its_fit_full, type = "III"))
 as.data.frame(Anova(shan_its_fit_full, type = "III"))
 
-# linear models 16S optimized
-fphd_16s_fit <- lm(Faithpd ~ Tissue + Rootstock + Irrigation + Block, data = ALPHA_div_16s_rare)
-simpI_16s_fit <- lm(InvSimpson ~ Tissue + Rootstock + Irrigation + Block, data = ALPHA_div_16s_rare)
-obso_16s_fit <- lm(Observed ~ Tissue + Rootstock + Irrigation + Block, data = ALPHA_div_16s_rare)
-shan_16s_fit <- lm(Shannon ~ Tissue + Rootstock + Irrigation + Block, data = ALPHA_div_16s_rare)
+# Posthoc testing
+pairs(emmeans(simpI_its_fit_full, ~ Compartment))
+pairs(emmeans(simpI_its_fit_full, ~ Rootstock))
+pairs(emmeans(simpI_its_fit_full, ~ Rootstock|Compartment))
+pairs(emmeans(obso_its_fit_full, ~ Compartment))
+pairs(emmeans(shan_its_fit_full, ~ Compartment))
 
+# Linear models 16S optimized
+fphd_16s_fit <- lm(Faithpd ~ Compartment + Rootstock + Irrigation + Block, data = ALPHA_div_16s_rare)
+simpI_16s_fit <- lm(InvSimpson ~ Compartment + Rootstock + Irrigation + Block, data = ALPHA_div_16s_rare)
+obso_16s_fit <- lm(Observed ~ Compartment + Rootstock + Irrigation + Block, data = ALPHA_div_16s_rare)
+shan_16s_fit <- lm(Shannon ~ Compartment + Rootstock + Irrigation + Block, data = ALPHA_div_16s_rare)
+
+# Print results, copied to Excel
 as.data.frame(Anova(fphd_16s_fit, type = "II"))
 as.data.frame(Anova(simpI_16s_fit, type = "II"))
 as.data.frame(Anova(obso_16s_fit, type = "II"))
 as.data.frame(Anova(shan_16s_fit, type = "II"))
 
-#linear models ITS optimized
-simpI_its_fit <- lm(InvSimpson ~ Tissue + Rootstock + Irrigation + Block, data = ALPHA_div_its_rare)
-obso_its_fit <- lm(Observed ~ Tissue + Rootstock + Irrigation + Block, data = ALPHA_div_its_rare)
-shan_its_fit <- lm(Shannon ~ Tissue + Rootstock + Irrigation + Block, data = ALPHA_div_its_rare)
+# Posthoc testing
+pairs(emmeans(fphd_16s_fit, ~ Compartment))
+pairs(emmeans(fphd_16s_fit, ~ Block))
+pairs(emmeans(simpI_16s_fit, ~ Compartment))
+pairs(emmeans(simpI_16s_fit, ~ Block))
+pairs(emmeans(obso_16s_fit, ~ Compartment))
+pairs(emmeans(shan_16s_fit, ~ Compartment))
 
+# Linear models ITS optimized
+simpI_its_fit <- lm(InvSimpson ~ Compartment + Rootstock + Irrigation + Block, data = ALPHA_div_its_rare)
+obso_its_fit <- lm(Observed ~ Compartment + Rootstock + Irrigation + Block, data = ALPHA_div_its_rare)
+shan_its_fit <- lm(Shannon ~ Compartment + Rootstock + Irrigation + Block, data = ALPHA_div_its_rare)
+
+# Print results, copied to Excel
 as.data.frame(Anova(simpI_its_fit, type = "II"))
 as.data.frame(Anova(obso_its_fit, type = "II"))
 as.data.frame(Anova(shan_its_fit, type = "II"))
 
-#Reset contrasts
+# Posthoc testing
+pairs(emmeans(simpI_its_fit, ~ Compartment))
+pairs(emmeans(simpI_its_fit, ~ Rootstock))
+pairs(emmeans(simpI_its_fit, ~ Block))
+pairs(emmeans(obso_its_fit, ~ Compartment))
+pairs(emmeans(shan_its_fit, ~ Compartment))
+
+# Reset contrasts
 options(contrasts = c("contr.treatment", "contr.poly"))
 
-##### 1.3) BETA DIVERSITY ANALYSIS #####
-# Calculate weighted and unweighted unifrac distances between pairs of samples
+##### 1.3) Beta Diversity #####
+
+# 16s beta diversity calculations
+# Calculate jaccard, weighted, and unweighted unifrac distances
 out.wunifrac <- ordinate(rare_physeq_16s, method = "MDS", distance = "wunifrac")
 out.uunifrac <- ordinate(rare_physeq_16s, method = "MDS", distance = "uunifrac")
 out.jaccard  <- ordinate(rare_physeq_16s, method = "MDS", distance = "jaccard")
 
-#Calculate distance matrixes for use in Vegan
+# Calculate distance matrixes for use in Vegan
 out.dist.wunifrac <- phyloseq::distance(rare_physeq_16s, "wunifrac")
 out.dist.uunifrac <- phyloseq::distance(rare_physeq_16s, "uunifrac")
 out.dist.jaccard  <- phyloseq::distance(rare_physeq_16s, "jaccard", binary = TRUE)
 
 # get variance explained by axes 1-3
-sum(out.wunifrac$values$Eigenvalues[1:3])/sum(out.wunifrac$values$Eigenvalues) #72%
+sum(out.wunifrac$values$Eigenvalues[1:3])/sum(out.wunifrac$values$Eigenvalues) #71%
 sum(out.uunifrac$values$Eigenvalues[1:3])/sum(out.uunifrac$values$Eigenvalues) #41%
-sum(out.jaccard$values$Eigenvalues[1:3])/sum(out.jaccard$values$Eigenvalues) #38%
+sum(out.jaccard$values$Eigenvalues[1:3])/sum(out.jaccard$values$Eigenvalues) #39%
 
-# Plot PCAs 1x2 and 1x3 for weighted and unweighted unifrac 
+# Plot PCAs 1x2 and 1x3 for Jaccard, weighted, and unweighted unifrac
 PCoA_1_2_wunif_16s <- PLOT_PCoA(physeq_16s, out.wunifrac, 1, 2)
 PCoA_1_3_wunif_16s <- PLOT_PCoA(physeq_16s, out.wunifrac, 1, 3)
 PCoA_1_2_uunif_16s <- PLOT_PCoA(physeq_16s, out.uunifrac, 1, 2)
@@ -279,18 +269,22 @@ PCoA_1_3_uunif_16s <- PLOT_PCoA(physeq_16s, out.uunifrac, 1, 3)
 PCoA_1_2_jaccd_16s <- PLOT_PCoA(physeq_16s, out.jaccard, 1, 2)
 PCoA_1_3_jaccd_16s <- PLOT_PCoA(physeq_16s, out.jaccard, 1, 3)
 
+# Using this one in Figure 2, colored by compartment and not split by rootstock
+PCoA_1_2_uunif_16s_c <- PLOT_PCoA(physeq_16s, out.uunifrac, 1, 2, split_by_rootstock = FALSE)
+
 # Create sample data dataframe from phyloseq object to use in vegan/adonis
 physeq_metadata_16s <- pssd2veg(rare_physeq_16s)
 
 # Adonis testing on weighted and unweighted unifrac distance matrix generated using phyloseq::distance
 # Full models
-adonis2(out.dist.wunifrac ~ Tissue*Rootstock*Irrigation + Block, data = physeq_metadata_16s, permutations = 10000)
-adonis2(out.dist.uunifrac ~ Tissue*Rootstock*Irrigation + Block, data = physeq_metadata_16s, permutations = 10000)
+adonis2(out.dist.wunifrac ~ Compartment*Rootstock*Irrigation + Block, data = physeq_metadata_16s, permutations = 10000)
+adonis2(out.dist.uunifrac ~ Compartment*Rootstock*Irrigation + Block, data = physeq_metadata_16s, permutations = 10000)
 ## Optimized model
-adonis2(out.dist.wunifrac ~ Rootstock + Tissue + Irrigation + Block, data = physeq_metadata_16s, permutations = 10000)
-adonis2(out.dist.uunifrac ~ Rootstock + Tissue + Irrigation + Block, data = physeq_metadata_16s, permutations = 10000)
+adonis2(out.dist.wunifrac ~ Rootstock + Compartment + Irrigation + Block, data = physeq_metadata_16s, permutations = 10000)
+adonis2(out.dist.uunifrac ~ Rootstock + Compartment + Irrigation + Block, data = physeq_metadata_16s, permutations = 10000)
 
 # ITS beta diversity calculations
+
 # Calculate distances between pairs of samples
 out.bray_its <- ordinate(rare_physeq_its, method = "MDS", distance = "bray")
 out.jaccard_its <- ordinate(rare_physeq_its, method = "MDS", distance = "jaccard")
@@ -308,28 +302,37 @@ PCoA_1_2_bray_its <- PLOT_PCoA(physeq_its, out.bray_its, 1, 2)
 PCoA_1_3_bray_its <- PLOT_PCoA(physeq_its, out.bray_its, 1, 3)
 PCoA_1_2_jacc_its <- PLOT_PCoA(physeq_its, out.jaccard_its, 1, 2)
 PCoA_1_3_jacc_its <- PLOT_PCoA(physeq_its, out.jaccard_its, 1, 3)
-
+# Using this one in Figure 2, colored by compartment and not split by rootstock
+PCoA_1_2_bray_its_c <- PLOT_PCoA(physeq_its, out.bray_its, 1, 2, split_by_rootstock = FALSE)
+  
 # Create sample data dataframe from phyloseq object to use in vegan/adonis
 physeq_metadata_its <- pssd2veg(rare_physeq_its)
 
 # Adonis testing on weighted and unweighted unifrac distance matrix generated using
 # Full models
-adonis2(out.dist.bray_its ~ Tissue*Rootstock*Irrigation + Block, data = physeq_metadata_its, permutations = 10000)
-adonis2(out.dist.jaccard_its ~ Tissue*Rootstock*Irrigation + Block, data = physeq_metadata_its, permutations = 10000)
-## Optomized model (stepwise)
-adonis2(out.dist.bray_its ~ Rootstock + Tissue + Irrigation + Block + Rootstock:Tissue, data = physeq_metadata_its, permutations = 10000)
-adonis2(out.dist.jaccard_its ~ Rootstock + Tissue + Irrigation + Block, data = physeq_metadata_its, permutations = 10000)
+adonis2(out.dist.bray_its ~ Compartment*Rootstock*Irrigation + Block, data = physeq_metadata_its, permutations = 10000)
+adonis2(out.dist.jaccard_its ~ Compartment*Rootstock*Irrigation + Block, data = physeq_metadata_its, permutations = 10000)
+## Optimized model (stepwise)
+adonis2(out.dist.bray_its ~ Rootstock + Compartment + Irrigation + Block + Rootstock:Compartment, data = physeq_metadata_its, permutations = 10000)
+adonis2(out.dist.jaccard_its ~ Rootstock + Compartment + Irrigation + Block, data = physeq_metadata_its, permutations = 10000)
 
 ##### 2.0) Taxonomic Barplots #####
-##### 2.1) 16S #####
-# Color pallette for ggplot2 taxonomic barplots
-taxapallete <- c('#8c8fae', '#584563', '#3e2137', '#9a6348', '#d79b7d', '#f5edba', '#c0c741', '#647d34', '#e4943a', '#9d303b', '#d26471', '#70377f', '#7ec4c1', '#34859d', '#17434b', '#1f0e1c')
+
+##### 2.1) 16s #####
+
+# Color palette for ggplot2 taxonomic barplots
+taxapallete_16S <- c('#8c8fae', '#584563', '#3e2137', '#9a6348', '#d79b7d', '#f5edba', '#c0c741', '#647d34', '#e4943a', '#9d303b', '#d26471', '#582d63', '#7ec4c1', '#34859d', '#17434b', '#1f0e1c', '#213b25', '#c0d1cc', '#4da6ff', '#ffffff') # NA16 Palette, slightly modified (https://lospec.com/palette-list/na16)
+taxapallete_ITS <- c('#ffffff', '#6df7c1', '#11adc1', '#606c81', '#393457', '#1e8875', '#5bb361', '#a1e55a', '#f7e476', '#f99252', '#cb4d68', '#6a3771', '#c92464', '#f48cb6', '#f7b69e', '#9b9c82') # Island joy 16 (https://lospec.com/palette-list/island-joy-16)
+
 # load data
 taxa_BP_16s<- read.csv("16s/ALL/taxa_barplot_level2.csv", header = TRUE, sep = ",")
+
 # Get number of reads per taxon
 sort(colSums(taxa_BP_16s[2:37]), decreasing = TRUE)
+
 # Subset dataframe to sample x taxon reads dataframe
 taxa_sumarized_16s <- taxa_BP_16s[2:37]
+
 # Sum the read count per sample of the taxa that are in low abundance
 taxa_other <- (taxa_BP_16s$D_0__Bacteria.D_1__Cyanobacteria +
                taxa_BP_16s$D_0__Bacteria.D_1__Tenericutes +
@@ -351,6 +354,7 @@ taxa_other <- (taxa_BP_16s$D_0__Bacteria.D_1__Cyanobacteria +
                taxa_BP_16s$D_0__Bacteria.D_1__Patescibacteria +
                taxa_BP_16s$D_0__Bacteria.D_1__Dadabacteria)
 taxa_other[taxa_other<0] <- 0
+
 # Taxa to remove from dataframe (either summed or were Archaea)
 taxa_other_list <- c('D_0__Bacteria.D_1__Cyanobacteria',
                      'D_0__Bacteria.D_1__Tenericutes',
@@ -374,37 +378,38 @@ taxa_other_list <- c('D_0__Bacteria.D_1__Cyanobacteria',
                      'D_0__Bacteria.D_1__Patescibacteria',
                      'D_0__Bacteria.D_1__Dadabacteria',
                      'D_0__Archaea.D_1__Thaumarchaeota')
-# Data handling to tidy data and make it into a format useful in ggplot2.
-A<- cbind(Tissue=(taxa_BP_16s$Tissue), taxa_sumarized_16s, taxa_other)
-B<- A[, -which(names(A) %in% taxa_other_list)]
-C<- B %>% group_by(Tissue) %>% summarise_each(funs(sum))
-D<- cbind(id = C[, 1], C[, -1]/rowSums(C[, -1]))
-BP_16s<- D %>% gather(variable, value, -Tissue)
-# For obtaining a vector of taxa names to make labels for the ggplot below.
-X<- (C[,2:16])
-X<- X[order(colSums(X), decreasing = TRUE)]
-rev(colnames(X))
 
-# Barplot 16s by tissue
-taxa_barplot16s <- ggplot(BP_16s, aes(Tissue, y=value, fill = reorder(variable, value))) +
+# Data handling to tidy data and make it into a format useful in ggplot2.
+A <- cbind(Compartment=(taxa_BP_16s$Compartment), taxa_sumarized_16s, taxa_other)
+B <- A[, -which(names(A) %in% taxa_other_list)]
+C <- B %>% group_by(Compartment) %>% summarise_each(funs(sum))
+D <- cbind(id = C[, 1], C[, -1]/rowSums(C[, -1]))
+BP_16s <- D %>% gather(variable, value, -Compartment)
+
+# Reseting factor level of the taxa names to alphabetic, this will keep it so each plot has the same order/legend order.
+BP_16s$variable <- factor(BP_16s$variable, levels = c("D_0__Bacteria.D_1__Acidobacteria", "D_0__Bacteria.D_1__Actinobacteria", "D_0__Bacteria.D_1__Armatimonadetes", "D_0__Bacteria.D_1__Bacteroidetes", "D_0__Bacteria.D_1__Chloroflexi", "D_0__Bacteria.D_1__Deinococcus.Thermus", "D_0__Bacteria.D_1__Firmicutes", "D_0__Bacteria.D_1__Gemmatimonadetes", "D_0__Bacteria.D_1__Latescibacteria", "D_0__Bacteria.D_1__Nitrospirae", "D_0__Bacteria.D_1__Planctomycetes", "D_0__Bacteria.D_1__Proteobacteria", "D_0__Bacteria.D_1__Rokubacteria", "D_0__Bacteria.D_1__Verrucomicrobia", "taxa_other"))
+
+# Barplot 16s by Compartment
+taxa_barplot16s <- ggplot(BP_16s, aes(Compartment, y=value, fill = variable)) +
   geom_bar(stat = "identity", color = "black") +
   ylab("Relative abundance") +
-  xlab("Tissue") +
+  xlab("Compartment") +
   theme(legend.position = "right", legend.key.size = unit(0.75, "cm"), legend.text=element_text(size=12), legend.title=element_text(size=24)) +
-  scale_fill_manual(name ="Bacterial phylum", values=taxapallete, labels = c(expression(italic("Deinococcus-Thermus")), expression(italic("Firmicutes")), expression(italic("Latescibacteria")), expression(italic("Armatimonadetes")), expression(italic("Nitrospirae")), expression(italic("Rokubacteria")), expression(italic("Gemmatimonadetes")), "Low abundance taxa", expression(italic("Chloroflexi")), expression(italic("Actinobacteria")), expression(italic("Planctomycetes")), expression(italic("Verrucomicrobia")), expression(italic("Bacteroidetes")), expression(italic("Acidobacteria")), expression(italic("Proteobacteria")))) +
+  scale_fill_manual(name ="Bacterial phylum", values=taxapallete_16S, labels = c(expression(italic("Acidobacteria")), expression(italic("Actinobacteria")), expression(italic("Armatimonadetes")), expression(italic("Bacteroidetes")), expression(italic("Chloroflexi")), expression(italic("Deinococcus-Thermus")), expression(italic("Firmicutes")), expression(italic("Gemmatimonadetes")), expression(italic("Latescibacteria")), expression(italic("Nitrospirae")), expression(italic("Planctomycetes")), expression(italic("Proteobacteria")), expression(italic("Rokubacteria")), expression(italic("Verrucomicrobia")), "Low abundance taxa")) +
   theme(legend.text.align = 0)
 
-##### 2.2) 16S by tissue and rootstock ####
-A<- cbind(Rootstock=(taxa_BP_16s$Rootstock), Tissue=(taxa_BP_16s$Tissue), taxa_sumarized_16s, taxa_other)
+# 16S by Compartment and rootstock
+A<- cbind(Rootstock=(taxa_BP_16s$Rootstock), Compartment=(taxa_BP_16s$Compartment), taxa_sumarized_16s, taxa_other)
 B<- A[, -which(names(A) %in% taxa_other_list)]
-C<- B %>% group_by(Tissue, Rootstock) %>% summarise_each(funs(sum))
+C<- B %>% group_by(Compartment, Rootstock) %>% summarise_each(funs(sum))
 
 #1103P#
 R_1103P <- C[c(1,5,9,13),]
 R_1103P <- R_1103P[,-2]
 R_1103P <- ungroup(R_1103P)
 D <- cbind(id = R_1103P[, 1], R_1103P[, -1]/rowSums(R_1103P[, -1]))
-R_1103P_BP <- D %>% gather(variable, value, -Tissue)
+R_1103P_BP <- D %>% gather(variable, value, -Compartment)
+R_1103P_BP$variable <- factor(R_1103P_BP$variable, levels = c("D_0__Bacteria.D_1__Acidobacteria", "D_0__Bacteria.D_1__Actinobacteria", "D_0__Bacteria.D_1__Armatimonadetes", "D_0__Bacteria.D_1__Bacteroidetes", "D_0__Bacteria.D_1__Chloroflexi", "D_0__Bacteria.D_1__Deinococcus.Thermus", "D_0__Bacteria.D_1__Firmicutes", "D_0__Bacteria.D_1__Gemmatimonadetes", "D_0__Bacteria.D_1__Latescibacteria", "D_0__Bacteria.D_1__Nitrospirae", "D_0__Bacteria.D_1__Planctomycetes", "D_0__Bacteria.D_1__Proteobacteria", "D_0__Bacteria.D_1__Rokubacteria", "D_0__Bacteria.D_1__Verrucomicrobia", "taxa_other"))
 #PLOT
 taxa_barplot16s_1103P <- PLOT_BP_16S_ROOTSTOCK(R_1103P_BP)
 
@@ -413,7 +418,8 @@ R_3309C <- C[c(2,6,10,14),]
 R_3309C <- R_3309C[,-2]
 R_3309C <- ungroup(R_3309C)
 D <- cbind(id = R_3309C[, 1], R_3309C[, -1]/rowSums(R_3309C[, -1]))
-R_3309C_BP <- D %>% gather(variable, value, -Tissue)
+R_3309C_BP <- D %>% gather(variable, value, -Compartment)
+R_3309C_BP$variable <- factor(R_3309C_BP$variable, levels = c("D_0__Bacteria.D_1__Acidobacteria", "D_0__Bacteria.D_1__Actinobacteria", "D_0__Bacteria.D_1__Armatimonadetes", "D_0__Bacteria.D_1__Bacteroidetes", "D_0__Bacteria.D_1__Chloroflexi", "D_0__Bacteria.D_1__Deinococcus.Thermus", "D_0__Bacteria.D_1__Firmicutes", "D_0__Bacteria.D_1__Gemmatimonadetes", "D_0__Bacteria.D_1__Latescibacteria", "D_0__Bacteria.D_1__Nitrospirae", "D_0__Bacteria.D_1__Planctomycetes", "D_0__Bacteria.D_1__Proteobacteria", "D_0__Bacteria.D_1__Rokubacteria", "D_0__Bacteria.D_1__Verrucomicrobia", "taxa_other"))
 #PLOT
 taxa_barplot16s_3309C <- PLOT_BP_16S_ROOTSTOCK(R_3309C_BP)
 
@@ -422,7 +428,8 @@ R_S04 <- C[c(4,8,12,16),]
 R_S04 <- R_S04[,-2]
 R_S04 <- ungroup(R_S04)
 D <- cbind(id = R_S04[, 1], R_S04[, -1]/rowSums(R_S04[, -1]))
-R_S04_BP <- D %>% gather(variable, value, -Tissue)
+R_S04_BP <- D %>% gather(variable, value, -Compartment)
+R_S04_BP$variable <- factor(R_S04_BP$variable, levels = c("D_0__Bacteria.D_1__Acidobacteria", "D_0__Bacteria.D_1__Actinobacteria", "D_0__Bacteria.D_1__Armatimonadetes", "D_0__Bacteria.D_1__Bacteroidetes", "D_0__Bacteria.D_1__Chloroflexi", "D_0__Bacteria.D_1__Deinococcus.Thermus", "D_0__Bacteria.D_1__Firmicutes", "D_0__Bacteria.D_1__Gemmatimonadetes", "D_0__Bacteria.D_1__Latescibacteria", "D_0__Bacteria.D_1__Nitrospirae", "D_0__Bacteria.D_1__Planctomycetes", "D_0__Bacteria.D_1__Proteobacteria", "D_0__Bacteria.D_1__Rokubacteria", "D_0__Bacteria.D_1__Verrucomicrobia", "taxa_other"))
 #PLOT
 taxa_barplot16s_S04 <- PLOT_BP_16S_ROOTSTOCK(R_S04_BP)
 
@@ -431,18 +438,22 @@ R_Ungrafted <- C[c(3,7,11,15),]
 R_Ungrafted <- R_Ungrafted[,-2]
 R_Ungrafted <- ungroup(R_Ungrafted)
 D <- cbind(id = R_Ungrafted[, 1], R_Ungrafted[, -1]/rowSums(R_Ungrafted[, -1]))
-R_Ungrafted_BP <- D %>% gather(variable, value, -Tissue)
+R_Ungrafted_BP <- D %>% gather(variable, value, -Compartment)
+R_Ungrafted_BP$variable <- factor(R_Ungrafted_BP$variable, levels = c("D_0__Bacteria.D_1__Acidobacteria", "D_0__Bacteria.D_1__Actinobacteria", "D_0__Bacteria.D_1__Armatimonadetes", "D_0__Bacteria.D_1__Bacteroidetes", "D_0__Bacteria.D_1__Chloroflexi", "D_0__Bacteria.D_1__Deinococcus.Thermus", "D_0__Bacteria.D_1__Firmicutes", "D_0__Bacteria.D_1__Gemmatimonadetes", "D_0__Bacteria.D_1__Latescibacteria", "D_0__Bacteria.D_1__Nitrospirae", "D_0__Bacteria.D_1__Planctomycetes", "D_0__Bacteria.D_1__Proteobacteria", "D_0__Bacteria.D_1__Rokubacteria", "D_0__Bacteria.D_1__Verrucomicrobia", "taxa_other"))
 #PLOT
 taxa_barplot16s_Ungrafted <- PLOT_BP_16S_ROOTSTOCK(R_Ungrafted_BP)
 
+##### 2.2) ITS #####
 
-##### 2.3) ITS #####
 # Load data
 taxa_BP_its<- read.csv("ITS/ALL/taxa_barplot_level3.csv", header = TRUE, sep = ",")
+
 # Get number of reads per taxon
 sort(colSums(taxa_BP_its[2:31]), decreasing = TRUE)
+
 # Subset dataframe to sample x taxon reads dataframe
 taxa_sumarized_its <- taxa_BP_its[2:31]
+
 # Sum the read count per sample of the taxa that are in low abundance
 taxa_other_its <- (taxa_BP_its$k__Fungi.p__Mortierellomycota.__ +
                    taxa_BP_its$k__Fungi.p__Ascomycota.__ +
@@ -463,7 +474,8 @@ taxa_other_its <- (taxa_BP_its$k__Fungi.p__Mortierellomycota.__ +
                    taxa_BP_its$k__Fungi.p__Calcarisporiellomycota.c__Calcarisporiellomycetes +
                    taxa_BP_its$k__Fungi.p__Basidiomycota.c__Exobasidiomycetes)
 taxa_other_its[taxa_other_its<0] <- 0
-# Taxa to remove from dataframe (either summed or were Archaea)
+
+# Taxa to remove from dataframe (low abundance)
 taxa_other_list_its <- c('k__Fungi.p__Mortierellomycota.__',
                          'k__Fungi.p__Ascomycota.__',
                          'k__Fungi.p__Basidiomycota.c__Pucciniomycetes',
@@ -484,35 +496,36 @@ taxa_other_list_its <- c('k__Fungi.p__Mortierellomycota.__',
                          'k__Fungi.p__Basidiomycota.c__Exobasidiomycetes')
 
 # Data handling to tidy data and make it into a format useful in ggplot2.
-A <- cbind(Tissue=(taxa_BP_its$Tissue), taxa_sumarized_its, taxa_other_its)
+A <- cbind(Compartment=(taxa_BP_its$Compartment), taxa_sumarized_its, taxa_other_its)
 B <- A[, -which(names(A) %in% taxa_other_list_its)]
-C <- B %>% group_by(Tissue) %>% summarise_each(funs(sum))
+C <- B %>% group_by(Compartment) %>% summarise_each(funs(sum))
 D <- cbind(id = C[, 1], C[, -1]/rowSums(C[, -1]))
-BP_its <- D %>% gather(variable, value, -Tissue)
-# For obtaining a vector of taxa names to make labels for the ggplot below.
-X<- (C[,2:14])
-X<- X[order(colSums(X), decreasing = TRUE)]
+BP_its <- D %>% gather(variable, value, -Compartment)
+
+# Reseting factor level of the taxa names to alphabetic, this will keep it so each plot has the same order/legend order.
+BP_its$variable <- factor(BP_its$variable, levels = c("k__Fungi.p__Basidiomycota.c__Agaricomycetes", "k__Fungi.p__Basidiomycota.c__Cystobasidiomycetes", "k__Fungi.p__Ascomycota.c__Dothideomycetes", "k__Fungi.p__Glomeromycota.c__Glomeromycetes", "k__Fungi.p__Ascomycota.c__Leotiomycetes", "k__Fungi.p__Basidiomycota.c__Microbotryomycetes", "k__Fungi.p__Mortierellomycota.c__Mortierellomycetes", "k__Fungi.p__Glomeromycota.c__Paraglomeromycetes", "k__Fungi.p__Ascomycota.c__Pezizomycetes", "k__Fungi.p__Ascomycota.c__Saccharomycetes", "k__Fungi.p__Ascomycota.c__Sordariomycetes", "k__Fungi.p__Basidiomycota.c__Tremellomycetes", "taxa_other_its"))
 
 ### ITS barplot ###
-taxa_barplotits <- ggplot(BP_its, aes(Tissue, y=value, fill = reorder(variable, value))) +
+taxa_barplotits <- ggplot(BP_its, aes(Compartment, y=value, fill = variable)) +
   geom_bar(stat = "identity", color = "black") +
   ylab("Relative abundance") +
-  xlab("Tissue") +
+  xlab("Compartment") +
   theme(legend.position = "right", legend.key.size = unit(0.75, "cm"), legend.text=element_text(size=12), legend.title=element_text(size=24)) +
-  scale_fill_manual(name ="Fungal class", values=taxapallete, labels = c(expression(italic("Paraglomeromycetes")), expression(italic("Pezizomycetes")), expression(italic("Glomeromycetes")), "Low abundance taxa", expression(italic("Cystobasidiomycetes")), expression(italic("Leotiomycetes")), expression(italic("Saccharomycetes")), expression(italic("Mortierellomycetes")), expression(italic("Microbotryomycetes")), expression(italic("Agaricomycetes")), expression(italic("Tremellomycetes")), expression(italic("Sordariomycetes")), expression(italic("Dothideomycetes")))) +
+  scale_fill_manual(name ="Fungal class", values=taxapallete_ITS, labels = c(expression(italic("Agaricomycetes")), expression(italic("Cystobasidiomycetes")), expression(italic("Dothideomycetes")), expression(italic("Glomeromycetes")), expression(italic("Leotiomycetes")), expression(italic("Microbotryomycetes")), expression(italic("Mortierellomycetes")), expression(italic("Paraglomeromycetes")), expression(italic("Pezizomycetes")), expression(italic("Saccharomycetes")), expression(italic("Sordariomycetes")), expression(italic("Tremellomycetes")), "Low abundance taxa")) +
   theme(legend.text.align = 0)
                                                                          
-##### 2.4) ITS by tissue and rootstock #####
-A<- cbind(Rootstock=(taxa_BP_its$Rootstock), Tissue=(taxa_BP_its$Tissue), taxa_sumarized_its, taxa_other_its)
-B<- A[, -which(names(A) %in% taxa_other_list_its)]
-C<- B %>% group_by(Tissue, Rootstock) %>% summarise_each(funs(sum))
+# ITS by Compartment and rootstock
+A <- cbind(Rootstock=(taxa_BP_its$Rootstock), Compartment=(taxa_BP_its$Compartment), taxa_sumarized_its, taxa_other_its)
+B <- A[, -which(names(A) %in% taxa_other_list_its)]
+C <- B %>% group_by(Compartment, Rootstock) %>% summarise_each(funs(sum))
 
 #1103P#
 R_1103P_its <- C[c(1,5,9,13),]
 R_1103P_its <- R_1103P_its[,-2]
 R_1103P_its <- ungroup(R_1103P_its)
 D <- cbind(id = R_1103P_its[, 1], R_1103P_its[, -1]/rowSums(R_1103P_its[, -1]))
-R_1103P_its_BP <- D %>% gather(variable, value, -Tissue)
+R_1103P_its_BP <- D %>% gather(variable, value, -Compartment)
+R_1103P_its_BP$variable <- factor(R_1103P_its_BP$variable, levels = c("k__Fungi.p__Basidiomycota.c__Agaricomycetes", "k__Fungi.p__Basidiomycota.c__Cystobasidiomycetes", "k__Fungi.p__Ascomycota.c__Dothideomycetes", "k__Fungi.p__Glomeromycota.c__Glomeromycetes", "k__Fungi.p__Ascomycota.c__Leotiomycetes", "k__Fungi.p__Basidiomycota.c__Microbotryomycetes", "k__Fungi.p__Mortierellomycota.c__Mortierellomycetes", "k__Fungi.p__Glomeromycota.c__Paraglomeromycetes", "k__Fungi.p__Ascomycota.c__Pezizomycetes", "k__Fungi.p__Ascomycota.c__Saccharomycetes", "k__Fungi.p__Ascomycota.c__Sordariomycetes", "k__Fungi.p__Basidiomycota.c__Tremellomycetes", "taxa_other_its"))
 #Plot
 taxa_barplotits_1103P <- PLOT_BP_ITS_ROOTSTOCK(R_1103P_its_BP)
 
@@ -521,7 +534,8 @@ R_3309C_its <- C[c(2,6,10,14),]
 R_3309C_its <- R_3309C_its[,-2]
 R_3309C_its <- ungroup(R_3309C_its)
 D <- cbind(id = R_3309C_its[, 1], R_3309C_its[, -1]/rowSums(R_3309C_its[, -1]))
-R_3309C_its_BP <- D %>% gather(variable, value, -Tissue)
+R_3309C_its_BP <- D %>% gather(variable, value, -Compartment)
+R_3309C_its_BP$variable <- factor(R_3309C_its_BP$variable, levels = c("k__Fungi.p__Basidiomycota.c__Agaricomycetes", "k__Fungi.p__Basidiomycota.c__Cystobasidiomycetes", "k__Fungi.p__Ascomycota.c__Dothideomycetes", "k__Fungi.p__Glomeromycota.c__Glomeromycetes", "k__Fungi.p__Ascomycota.c__Leotiomycetes", "k__Fungi.p__Basidiomycota.c__Microbotryomycetes", "k__Fungi.p__Mortierellomycota.c__Mortierellomycetes", "k__Fungi.p__Glomeromycota.c__Paraglomeromycetes", "k__Fungi.p__Ascomycota.c__Pezizomycetes", "k__Fungi.p__Ascomycota.c__Saccharomycetes", "k__Fungi.p__Ascomycota.c__Sordariomycetes", "k__Fungi.p__Basidiomycota.c__Tremellomycetes", "taxa_other_its"))
 #PLOT
 taxa_barplotits_3309C <- PLOT_BP_ITS_ROOTSTOCK(R_3309C_its_BP)
 
@@ -530,7 +544,8 @@ R_S04_its <- C[c(4,8,12,16),]
 R_S04_its <- R_S04_its[,-2]
 R_S04_its <- ungroup(R_S04_its)
 D <- cbind(id = R_S04_its[, 1], R_S04_its[, -1]/rowSums(R_S04_its[, -1]))
-R_S04_its_BP <- D %>% gather(variable, value, -Tissue)
+R_S04_its_BP <- D %>% gather(variable, value, -Compartment)
+R_S04_its_BP$variable <- factor(R_S04_its_BP$variable, levels = c("k__Fungi.p__Basidiomycota.c__Agaricomycetes", "k__Fungi.p__Basidiomycota.c__Cystobasidiomycetes", "k__Fungi.p__Ascomycota.c__Dothideomycetes", "k__Fungi.p__Glomeromycota.c__Glomeromycetes", "k__Fungi.p__Ascomycota.c__Leotiomycetes", "k__Fungi.p__Basidiomycota.c__Microbotryomycetes", "k__Fungi.p__Mortierellomycota.c__Mortierellomycetes", "k__Fungi.p__Glomeromycota.c__Paraglomeromycetes", "k__Fungi.p__Ascomycota.c__Pezizomycetes", "k__Fungi.p__Ascomycota.c__Saccharomycetes", "k__Fungi.p__Ascomycota.c__Sordariomycetes", "k__Fungi.p__Basidiomycota.c__Tremellomycetes", "taxa_other_its"))
 #PLOT
 taxa_barplotits_S04 <- PLOT_BP_ITS_ROOTSTOCK(R_S04_its_BP)
 
@@ -539,61 +554,117 @@ R_Ungrafted_its <- C[c(3,7,11,15),]
 R_Ungrafted_its <- R_Ungrafted_its[,-2]
 R_Ungrafted_its <- ungroup(R_Ungrafted_its)
 D <- cbind(id = R_Ungrafted_its[, 1], R_Ungrafted_its[, -1]/rowSums(R_Ungrafted_its[, -1]))
-R_Ungrafted_its_BP <- D %>% gather(variable, value, -Tissue)
+R_Ungrafted_its_BP <- D %>% gather(variable, value, -Compartment)
+R_Ungrafted_its_BP$variable <- factor(R_Ungrafted_its_BP$variable, levels = c("k__Fungi.p__Basidiomycota.c__Agaricomycetes", "k__Fungi.p__Basidiomycota.c__Cystobasidiomycetes", "k__Fungi.p__Ascomycota.c__Dothideomycetes", "k__Fungi.p__Glomeromycota.c__Glomeromycetes", "k__Fungi.p__Ascomycota.c__Leotiomycetes", "k__Fungi.p__Basidiomycota.c__Microbotryomycetes", "k__Fungi.p__Mortierellomycota.c__Mortierellomycetes", "k__Fungi.p__Glomeromycota.c__Paraglomeromycetes", "k__Fungi.p__Ascomycota.c__Pezizomycetes", "k__Fungi.p__Ascomycota.c__Saccharomycetes", "k__Fungi.p__Ascomycota.c__Sordariomycetes", "k__Fungi.p__Basidiomycota.c__Tremellomycetes", "taxa_other_its"))
 #PLOT
 taxa_barplotits_Ungrafted <- PLOT_BP_ITS_ROOTSTOCK(R_Ungrafted_its_BP)
 
 # Remove unneeded objects
-rm("A" , "B" , "C" , "D" , "X")
+rm("A" , "B" , "C" , "D")
 
 ##### 3.0) Differential abundance analysis  #####
 ##### 3.1) 16s #####
 #DESEQ2
 physeq_16s <- qza_to_phyloseq('16s/ALL/filtered-table-no-mitochondria-no-chloroplast.qza','16s/ALL/rooted-tree.qza','16s/ALL/taxonomy.qza','16s/ALL/16s_noMockorPosorNeg_metadata.tsv', tmp="C:/tmp")
+
 # recode factors OWN to Ungrafted
 physeq_16s@sam_data$Rootstock <- recode_factor(physeq_16s@sam_data$Rootstock , OWN = "Ungrafted")
+
 # Fix issue with Silva taxonomy strings before conducting DESEQ2 object.
 physeq_16s@tax_table[,1]  <- gsub('D_.__', '', physeq_16s@tax_table[,1])
 tax_table(physeq_16s) <- as.matrix(separate(as.data.frame(physeq_16s@tax_table[,1]), col = Kingdom, sep = ";", into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")))
-# Remove taxa that are not found greater than 25 times in 15% of the samples
+
+# Remove taxa that are not found greater than 25 times in 10% of the samples
 physeq_16s <- filter_taxa(physeq_16s, function(x) sum(x > 25) > (0.10*length(x)), TRUE)
+
 # In order for DESEQ2 to run there can be no zeros in the OTU matrix, so I add 1 to each count
 otu_table(physeq_16s) <- otu_table(physeq_16s) + 1
-# Create Deseq2 object with study desgin formula XXX
-# DS2_16s <- phyloseq_to_deseq2(physeq_16s, ~ Rootstock + Tissue + Irrigation + Block + Rootstock:Tissue)
-DS2_16s <- phyloseq_to_deseq2(physeq_16s, ~ Tissue*Rootstock + Irrigation + Irrigation:Tissue + Irrigation:Rootstock + Block)
+
+# Create Deseq2 object with study desgin formula
+DS2_16s <- phyloseq_to_deseq2(physeq_16s, ~ Compartment*Rootstock + Irrigation + Irrigation:Compartment + Irrigation:Rootstock + Block)
 DS2_16s <- DESeq(DS2_16s, test="Wald", fitType = "local") # Local fitype captures dispersion trend better than parametric.
 
 # Results table contrasts
 resultsNames(DS2_16s)
+
 # Contrast list
-Contrast_list <- c("Tissue_Leaf_vs_Berry", "Tissue_Root_vs_Berry", "Tissue_Soil_vs_Berry", "Rootstock_1103P_vs_Ungrafted", "Rootstock_3309C_vs_Ungrafted", "Rootstock_SO4_vs_Ungrafted", "Irrigation_none_vs_full", "Irrigation_rdi_vs_full", "Block_B_vs_A", "Block_C_vs_A", "TissueLeaf.Rootstock1103P", "TissueRoot.Rootstock1103P", "TissueSoil.Rootstock1103P", "TissueLeaf.Rootstock3309C", "TissueRoot.Rootstock3309C", "TissueSoil.Rootstock3309C", "TissueLeaf.RootstockSO4", "TissueRoot.RootstockSO4", "TissueSoil.RootstockSO4", "TissueLeaf.Irrigationnone", "TissueRoot.Irrigationnone", "TissueSoil.Irrigationnone", "TissueLeaf.Irrigationrdi", "TissueRoot.Irrigationrdi", "TissueSoil.Irrigationrdi", "Rootstock1103P.Irrigationnone", "Rootstock3309C.Irrigationnone", "RootstockSO4.Irrigationnone", "Rootstock1103P.Irrigationrdi", "Rootstock3309C.Irrigationrdi", "RootstockSO4.Irrigationrdi")
-# Rough plotting of the number of significantly different abundant ASVs per factor
+Contrast_list <- c("Compartment_Leaf_vs_Berry", "Compartment_Root_vs_Berry", "Compartment_Soil_vs_Berry", "Rootstock_1103P_vs_Ungrafted", "Rootstock_3309C_vs_Ungrafted", "Rootstock_SO4_vs_Ungrafted", "Irrigation_none_vs_full", "Irrigation_rdi_vs_full", "Block_B_vs_A", "Block_C_vs_A", "CompartmentLeaf.Rootstock1103P", "CompartmentRoot.Rootstock1103P", "CompartmentSoil.Rootstock1103P", "CompartmentLeaf.Rootstock3309C", "CompartmentRoot.Rootstock3309C", "CompartmentSoil.Rootstock3309C", "CompartmentLeaf.RootstockSO4", "CompartmentRoot.RootstockSO4", "CompartmentSoil.RootstockSO4", "CompartmentLeaf.Irrigationnone", "CompartmentRoot.Irrigationnone", "CompartmentSoil.Irrigationnone", "CompartmentLeaf.Irrigationrdi", "CompartmentRoot.Irrigationrdi", "CompartmentSoil.Irrigationrdi", "Rootstock1103P.Irrigationnone", "Rootstock3309C.Irrigationnone", "RootstockSO4.Irrigationnone", "Rootstock1103P.Irrigationrdi", "Rootstock3309C.Irrigationrdi", "RootstockSO4.Irrigationrdi")
+
+# Extracting significantly different abundant ASVs per factor
 p <- c()
 for (i in Contrast_list){
    p[[i]] <- as.data.frame(results(DS2_16s, cooksCutoff = FALSE, name = i))
    p[[i]] <- p[[i]][which(p[[i]]$padj < 0.05), ]
 }
 
-# Main effects Tissue, Rootstock, Irrigation, Block
-T_num <- length(unique(c(rownames(p[["Tissue_Leaf_vs_Berry"]]), rownames(p[["Tissue_Root_vs_Berry"]]), rownames(p[["Tissue_Soil_vs_Berry"]]))))
+# Main effects Compartment, Rootstock, Irrigation, Block
+T_num <- length(unique(c(rownames(p[["Compartment_Leaf_vs_Berry"]]), rownames(p[["Compartment_Root_vs_Berry"]]), rownames(p[["Compartment_Soil_vs_Berry"]]))))
 R_num <- length(unique(c(rownames(p[["Rootstock_1103P_vs_Ungrafted"]]), rownames(p[["Rootstock_3309C_vs_Ungrafted"]]), rownames(p[["Rootstock_SO4_vs_Ungrafted"]]))))
 I_num <- length(unique(c(rownames(p[["Irrigation_none_vs_full"]]), rownames(p[["Irrigation_rdi_vs_full"]]))))
 B_num <- length(unique(c(rownames(p[["Block_B_vs_A"]]), rownames(p[["Block_C_vs_A"]]))))
+
 # Interactions
-RxT_num <- length(unique(c(rownames(p[["TissueLeaf.Rootstock1103P"]]), rownames(p[["TissueRoot.Rootstock1103P"]]), rownames(p[["TissueSoil.Rootstock1103P"]]), rownames(p[["TissueLeaf.Rootstock3309C"]]), rownames(p[["TissueRoot.Rootstock3309C"]]), rownames(p[["TissueSoil.Rootstock3309C"]]), rownames(p[["TissueLeaf.RootstockSO4"]]), rownames(p[["TissueRoot.RootstockSO4"]]), rownames(p[["TissueSoil.RootstockSO4"]]))))
-TxI_num <- length(unique(c(rownames(p[["TissueLeaf.Irrigationnone"]]), rownames(p[["TissueRoot.Irrigationnone"]]), rownames(p[["TissueSoil.Irrigationnone"]]), rownames(p[["TissueLeaf.Irrigationrdi"]]), rownames(p[["TissueRoot.Irrigationrdi"]]), rownames(p[["TissueSoil.Irrigationrdi"]]))))
+RxT_num <- length(unique(c(rownames(p[["CompartmentLeaf.Rootstock1103P"]]), rownames(p[["CompartmentRoot.Rootstock1103P"]]), rownames(p[["CompartmentSoil.Rootstock1103P"]]), rownames(p[["CompartmentLeaf.Rootstock3309C"]]), rownames(p[["CompartmentRoot.Rootstock3309C"]]), rownames(p[["CompartmentSoil.Rootstock3309C"]]), rownames(p[["CompartmentLeaf.RootstockSO4"]]), rownames(p[["CompartmentRoot.RootstockSO4"]]), rownames(p[["CompartmentSoil.RootstockSO4"]]))))
+TxI_num <- length(unique(c(rownames(p[["CompartmentLeaf.Irrigationnone"]]), rownames(p[["CompartmentRoot.Irrigationnone"]]), rownames(p[["CompartmentSoil.Irrigationnone"]]), rownames(p[["CompartmentLeaf.Irrigationrdi"]]), rownames(p[["CompartmentRoot.Irrigationrdi"]]), rownames(p[["CompartmentSoil.Irrigationrdi"]]))))
 RxI_num <- length(unique(c(rownames(p[["Rootstock1103P.Irrigationnone"]]), rownames(p[["Rootstock3309C.Irrigationnone"]]), rownames(p[["RootstockSO4.Irrigationnone"]]), rownames(p[["Rootstock1103P.Irrigationrdi"]]), rownames(p[["Rootstock3309C.Irrigationrdi"]]), rownames(p[["RootstockSO4.Irrigationrdi"]]))))
 
 Number_of_DiffAbund_ASVs_16s <- as.data.frame(c(T_num, R_num, I_num, B_num, RxT_num, TxI_num, RxI_num))
-rownames(Number_of_DiffAbund_ASVs_16s) <- c( "Tissue", "Rootstock", "Irrigation", "Block", "Rootstock x Tissue", "Tissue x Irrigation", "Rootstock x Irrigation")
+rownames(Number_of_DiffAbund_ASVs_16s) <- c( "Compartment", "Rootstock", "Irrigation", "Block", "Rootstock x Compartment", "Compartment x Irrigation", "Rootstock x Irrigation")
 colnames(Number_of_DiffAbund_ASVs_16s) <- "num_ASVs"
-Number_of_DiffAbund_ASVs_16s <- cbind(Number_of_DiffAbund_ASVs_16s, Factor = c("Tissue", "Rootstock", "Irrigation", "Block", "Rootstock x Tissue", "Tissue x Irrigation", "Rootstock x Irrigation")) #XXX
-Number_of_DiffAbund_ASVs_16s$relabun <- (Number_of_DiffAbund_ASVs_16s$num_ASVs / 757)
-TEMP_name <- ggplot(Number_of_DiffAbund_ASVs_16s,aes(x=Factor,y=relabun)) + geom_bar(stat="identity",position="dodge",width=0.9) + ylab("Proportion of ASVs responding to each factor") + ylim(0,1) + xlab("Factor") + ggtitle("16s data")
-ggsave(filename = "DESeq_16s_prelim.pdf", plot = TEMP_name, units = "in", height = 5, width = 8, path = "Figures")
+Number_of_DiffAbund_ASVs_16s <- cbind(Number_of_DiffAbund_ASVs_16s, Factor = c("Compartment", "Rootstock", "Irrigation", "Block", "Rootstock x Compartment", "Compartment x Irrigation", "Rootstock x Irrigation"))
+Number_of_DiffAbund_ASVs_16s$relabun <- (Number_of_DiffAbund_ASVs_16s$num_ASVs / 757)# This 757 number comes from the number of unique taxa from filtering the phyloseq object above
 
-# Rough plotting of log fold changes by factor
+# Get Taxonomy of differentailly abundant ASVs per factor
+# Main effects Compartment, Rootstock, Irrigation, Block
+T_ASV_list <- as.data.frame(unique(c(rownames(p[["Compartment_Leaf_vs_Berry"]]), rownames(p[["Compartment_Root_vs_Berry"]]), rownames(p[["Compartment_Soil_vs_Berry"]]))))
+R_ASV_list <- as.data.frame(unique(c(rownames(p[["Rootstock_1103P_vs_Ungrafted"]]), rownames(p[["Rootstock_3309C_vs_Ungrafted"]]), rownames(p[["Rootstock_SO4_vs_Ungrafted"]]))))
+I_ASV_list <- as.data.frame(unique(c(rownames(p[["Irrigation_none_vs_full"]]), rownames(p[["Irrigation_rdi_vs_full"]]))))
+B_ASV_list <- as.data.frame(unique(c(rownames(p[["Block_B_vs_A"]]), rownames(p[["Block_C_vs_A"]]))))
+
+# Interactions
+RxT_ASV_list <- as.data.frame(unique(c(rownames(p[["CompartmentLeaf.Rootstock1103P"]]), rownames(p[["CompartmentRoot.Rootstock1103P"]]), rownames(p[["CompartmentSoil.Rootstock1103P"]]), rownames(p[["CompartmentLeaf.Rootstock3309C"]]), rownames(p[["CompartmentRoot.Rootstock3309C"]]), rownames(p[["CompartmentSoil.Rootstock3309C"]]), rownames(p[["CompartmentLeaf.RootstockSO4"]]), rownames(p[["CompartmentRoot.RootstockSO4"]]), rownames(p[["CompartmentSoil.RootstockSO4"]]))))
+TxI_ASV_list <- as.data.frame(unique(c(rownames(p[["CompartmentLeaf.Irrigationnone"]]), rownames(p[["CompartmentRoot.Irrigationnone"]]), rownames(p[["CompartmentSoil.Irrigationnone"]]), rownames(p[["CompartmentLeaf.Irrigationrdi"]]), rownames(p[["CompartmentRoot.Irrigationrdi"]]), rownames(p[["CompartmentSoil.Irrigationrdi"]]))))
+RxI_ASV_list <- as.data.frame(unique(c(rownames(p[["Rootstock1103P.Irrigationnone"]]), rownames(p[["Rootstock3309C.Irrigationnone"]]), rownames(p[["RootstockSO4.Irrigationnone"]]), rownames(p[["Rootstock1103P.Irrigationrdi"]]), rownames(p[["Rootstock3309C.Irrigationrdi"]]), rownames(p[["RootstockSO4.Irrigationrdi"]]))))
+
+# Get dataframe of all ASV hash number for use in next step
+x <- as.data.frame(tax_table(physeq_16s))
+x$ASV_hash <- rownames(x)
+
+# Main effects Compartment, Rootstock, Irrigation, Block
+T_ASV_list <- x[x$ASV_hash %in% T_ASV_list$uniq, ]
+R_ASV_list <- x[x$ASV_hash %in% R_ASV_list$uniq, ]
+I_ASV_list <- x[x$ASV_hash %in% I_ASV_list$uniq, ]
+B_ASV_list <- x[x$ASV_hash %in% B_ASV_list$uniq, ]
+
+# Interaction
+RxT_ASV_list <- x[x$ASV_hash %in% RxT_ASV_list$uniq, ]
+TxI_ASV_list <- x[x$ASV_hash %in% TxI_ASV_list$uniq, ]
+RxI_ASV_list <- x[x$ASV_hash %in% RxI_ASV_list$uniq, ]
+
+# Extract taxonomy
+Class_ASV_df <- as.data.frame(bind_rows(summary(T_ASV_list$Phylum), summary(R_ASV_list$Phylum), summary(I_ASV_list$Phylum), summary(B_ASV_list$Phylum), summary(RxT_ASV_list$Phylum), summary(TxI_ASV_list$Phylum), summary(RxI_ASV_list$Phylum)))
+Class_ASV_df <- Class_ASV_df[, colSums(Class_ASV_df != 0) > 0]
+
+# Merge relative proportion of ASVs df with taxonomy df
+num_tax_ASVs_16s <- cbind(Number_of_DiffAbund_ASVs_16s, Class_ASV_df)
+
+# Covert taxonomy counts into proportions
+num_tax_ASVs_16s[1,c(seq(4,22,1))] <- num_tax_ASVs_16s[1,3] * (num_tax_ASVs_16s[1,c(seq(4,22,1))] / sum(num_tax_ASVs_16s[1,c(seq(4,22,1))]))
+num_tax_ASVs_16s[2,c(seq(4,22,1))] <- num_tax_ASVs_16s[2,3] * (num_tax_ASVs_16s[2,c(seq(4,22,1))] / sum(num_tax_ASVs_16s[2,c(seq(4,22,1))]))
+num_tax_ASVs_16s[3,c(seq(4,22,1))] <- num_tax_ASVs_16s[3,3] * (num_tax_ASVs_16s[3,c(seq(4,22,1))] / sum(num_tax_ASVs_16s[3,c(seq(4,22,1))]))
+num_tax_ASVs_16s[4,c(seq(4,22,1))] <- num_tax_ASVs_16s[4,3] * (num_tax_ASVs_16s[4,c(seq(4,22,1))] / sum(num_tax_ASVs_16s[4,c(seq(4,22,1))]))
+num_tax_ASVs_16s[5,c(seq(4,22,1))] <- num_tax_ASVs_16s[5,3] * (num_tax_ASVs_16s[5,c(seq(4,22,1))] / sum(num_tax_ASVs_16s[5,c(seq(4,22,1))]))
+num_tax_ASVs_16s[6,c(seq(4,22,1))] <- num_tax_ASVs_16s[6,3] * (num_tax_ASVs_16s[6,c(seq(4,22,1))] / sum(num_tax_ASVs_16s[6,c(seq(4,22,1))]))
+num_tax_ASVs_16s[7,c(seq(4,22,1))] <- num_tax_ASVs_16s[7,3] * (num_tax_ASVs_16s[7,c(seq(4,22,1))] / sum(num_tax_ASVs_16s[7,c(seq(4,22,1))]))
+
+# Gather columns into a single column for use in ggplot
+num_tax_ASVs_16s <- gather(num_tax_ASVs_16s, key = "Taxon", value = "Freq", -c(Factor,relabun, num_ASVs))
+num_tax_ASVs_16s$Taxon <- factor(num_tax_ASVs_16s$Taxon)
+
+# Step the factor order of the taxon names
+num_tax_ASVs_16s$Taxon <- factor(num_tax_ASVs_16s$Taxon, levels =  c("Acidobacteria", "Actinobacteria", "Armatimonadetes" , "Bacteroidetes", "Chloroflexi", "Deinococcus-Thermus", "Firmicutes", "Gemmatimonadetes", "Latescibacteria", "Nitrospirae", "Planctomycetes", "Proteobacteria", "Rokubacteria", "Verrucomicrobia", "Cyanobacteria", "Elusimicrobia", "Entotheonellaeota", "Fibrobacteres", "Spirochaetes", "Thaumarchaeota", "NA's"))
+
+# Plotting of log fold changes by factor
 p <- c()
 for (i in Contrast_list){
   p[[i]] <- as.data.frame(results(DS2_16s, cooksCutoff = FALSE, name = i))
@@ -606,15 +677,18 @@ T_lf2c <- unique(rbind(p[[1]], p[[2]], p[[3]]))
 R_lf2c <- unique(rbind(p[[4]], p[[5]], p[[6]]))
 I_lf2c <- unique(rbind(p[[7]], p[[8]]))
 B_lf2c <- unique(rbind(p[[9]], p[[10]]))
+
 # Interactions
 TxR_lf2c <- unique(rbind(p[[11]], p[[12]], p[[13]], p[[14]], p[[15]], p[[16]], p[[17]], p[[18]], p[[19]]))
 TxI_lf2c <- unique(rbind(p[[20]], p[[21]], p[[22]], p[[23]], p[[24]], p[[25]]))
 RxI_lf2c <- unique(rbind(p[[26]], p[[27]], p[[28]], p[[29]], p[[30]], p[[31]]))
+
 # Extract Log2FoldChange column, Main Effects
 R_lf2c <- as.data.frame(abs(R_lf2c$log2FoldChange))
 T_lf2c <- as.data.frame(abs(T_lf2c$log2FoldChange))
 B_lf2c <- as.data.frame(abs(B_lf2c$log2FoldChange))
 I_lf2c <- as.data.frame(abs(I_lf2c$log2FoldChange))
+
 # Extract Log2FoldChange column, Interactions
 TxR_lf2c <- as.data.frame(abs(TxR_lf2c$log2FoldChange))
 TxI_lf2c <- as.data.frame(abs(TxI_lf2c$log2FoldChange))
@@ -628,54 +702,44 @@ colnames(I_lf2c)[1] <- "Log2FoldChange"
 colnames(TxR_lf2c)[1] <- "Log2FoldChange"
 colnames(TxI_lf2c)[1] <- "Log2FoldChange"
 colnames(RxI_lf2c)[1] <- "Log2FoldChange"
+
 # Add factor column
 R_lf2c["Factor"] = "Rootstock"
-T_lf2c["Factor"] = "Tissue"
+T_lf2c["Factor"] = "Compartment"
 B_lf2c["Factor"] = "Block"
 I_lf2c["Factor"] = "Irrigation"
-TxR_lf2c["Factor"] = "Rootstock x Tissue"
-TxI_lf2c["Factor"] = "Tissue x Irrigation"
+TxR_lf2c["Factor"] = "Rootstock x Compartment"
+TxI_lf2c["Factor"] = "Compartment x Irrigation"
 RxI_lf2c["Factor"] = "Rootstock x Irrigation"
+
 # Bind by row all dfs
 Log2fold_by_factor_16s <- rbind(R_lf2c, T_lf2c, B_lf2c, I_lf2c, TxR_lf2c, TxI_lf2c, RxI_lf2c)
-# Box plot
-ggplot(Log2fold_by_factor_16s, aes(x=Factor, y=Log2FoldChange)) + geom_boxplot(outlier.color = "red")
-# Violin plot
-ggplot(Log2fold_by_factor_16s, aes(x=Factor, y=Log2FoldChange)) + geom_violin(fill= "green", trim = FALSE, scale = "width") + stat_summary(fun.data=mean_sdl, geom="pointrange") + aes(x = fct_inorder(Factor)) + xlab("Factor")
 
-# Creating dataframe for plotting of differentially abundant taxa by rootstock and tissue
-otu_table(physeq_16s) <- otu_table(physeq_16s) - 1
-otu_matrix <- as(otu_table(physeq_16s), "matrix")
-if(taxa_are_rows(physeq_16s)){otu_matrix<- t(otu_matrix)}
-otu_df <- as.data.frame(otu_matrix)
-
-
-which(colnames(otu_df) == "7726eecd3a974455ae6f8c080caf8f5d")
-
-plot_deseq2_DiffAbunMicob(physeq_16s, 214)
+# Tukey test for significant difference in means 
+TukeyHSD(aov(Log2FoldChange ~ Factor, data = Log2fold_by_factor_16s), conf.level = 0.95)
 
 ##### 3.2) ITS #####
 #DESEQ2
 physeq_its <- qza_to_phyloseq('ITS/ALL/filtered-nocontrol-trimmed-table.qza', taxonomy = 'ITS/ALL/taxonomy.qza', metadata = 'ITS/ALL/its_metadata_noControlsorWine.tsv', tmp="C:/tmp")
+
 # recode factors OWN to Ungrafted
 physeq_its@sam_data$Rootstock <- recode_factor(physeq_its@sam_data$Rootstock , OWN = "Ungrafted")
+
 # Fix issue with UNITE taxonomy strings before conducting DESEQ2 on slices of the phyloseq object
 physeq_its@tax_table[,1] <- gsub('.__', '', physeq_its@tax_table[,1])
 tax_table(physeq_its) <- as.matrix(separate(as.data.frame(physeq_its@tax_table[,1]), col = Kingdom, sep = ";", into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")))
 # Remove taxa that are not found greater than 25 times in 10% of the samples
 physeq_its <- filter_taxa(physeq_its, function(x) sum(x > 25) > (0.10*length(x)), TRUE)
-physeq_its
 # In order for DESEQ2 to run there can be no zeros in the OTU matrix, so I add 1 to each count
 otu_table(physeq_its) <- otu_table(physeq_its) + 1
-
 # Create Deseq2 object with study desgin formula
-DS2_its <- phyloseq_to_deseq2(physeq_its, ~ Tissue*Rootstock + Irrigation + Irrigation:Tissue + Irrigation:Rootstock + Block)
+DS2_its <- phyloseq_to_deseq2(physeq_its, ~ Compartment*Rootstock + Irrigation + Irrigation:Compartment + Irrigation:Rootstock + Block)
 DS2_its <- DESeq(DS2_its, test="Wald", fitType = "local")
 
 # Results table
 resultsNames(DS2_its)
 # Contrast list
-Contrast_list <- c("Tissue_Leaf_vs_Berry", "Tissue_Root_vs_Berry", "Tissue_Soil_vs_Berry", "Rootstock_1103P_vs_Ungrafted", "Rootstock_3309C_vs_Ungrafted", "Rootstock_SO4_vs_Ungrafted", "Irrigation_none_vs_full", "Irrigation_rdi_vs_full", "Block_B_vs_A", "Block_C_vs_A", "TissueLeaf.Rootstock1103P", "TissueRoot.Rootstock1103P", "TissueSoil.Rootstock1103P", "TissueLeaf.Rootstock3309C", "TissueRoot.Rootstock3309C", "TissueSoil.Rootstock3309C", "TissueLeaf.RootstockSO4", "TissueRoot.RootstockSO4", "TissueSoil.RootstockSO4", "TissueLeaf.Irrigationnone", "TissueRoot.Irrigationnone", "TissueSoil.Irrigationnone", "TissueLeaf.Irrigationrdi", "TissueRoot.Irrigationrdi", "TissueSoil.Irrigationrdi", "Rootstock1103P.Irrigationnone", "Rootstock3309C.Irrigationnone", "RootstockSO4.Irrigationnone", "Rootstock1103P.Irrigationrdi", "Rootstock3309C.Irrigationrdi", "RootstockSO4.Irrigationrdi")
+Contrast_list <- c("Compartment_Leaf_vs_Berry", "Compartment_Root_vs_Berry", "Compartment_Soil_vs_Berry", "Rootstock_1103P_vs_Ungrafted", "Rootstock_3309C_vs_Ungrafted", "Rootstock_SO4_vs_Ungrafted", "Irrigation_none_vs_full", "Irrigation_rdi_vs_full", "Block_B_vs_A", "Block_C_vs_A", "CompartmentLeaf.Rootstock1103P", "CompartmentRoot.Rootstock1103P", "CompartmentSoil.Rootstock1103P", "CompartmentLeaf.Rootstock3309C", "CompartmentRoot.Rootstock3309C", "CompartmentSoil.Rootstock3309C", "CompartmentLeaf.RootstockSO4", "CompartmentRoot.RootstockSO4", "CompartmentSoil.RootstockSO4", "CompartmentLeaf.Irrigationnone", "CompartmentRoot.Irrigationnone", "CompartmentSoil.Irrigationnone", "CompartmentLeaf.Irrigationrdi", "CompartmentRoot.Irrigationrdi", "CompartmentSoil.Irrigationrdi", "Rootstock1103P.Irrigationnone", "Rootstock3309C.Irrigationnone", "RootstockSO4.Irrigationnone", "Rootstock1103P.Irrigationrdi", "Rootstock3309C.Irrigationrdi", "RootstockSO4.Irrigationrdi")
 # Rough plotting of the number of significantly different abundant ASVs per factor
 p <- c()
 for (i in Contrast_list){
@@ -683,25 +747,67 @@ for (i in Contrast_list){
   p[[i]] <- p[[i]][which(p[[i]]$padj < 0.05), ]
 }
 
-# Main effects Tissue, Rootstock, Irrigation, Block
-T_num <- length(unique(c(rownames(p[["Tissue_Leaf_vs_Berry"]]), rownames(p[["Tissue_Root_vs_Berry"]]), rownames(p[["Tissue_Soil_vs_Berry"]]))))
+# Get Number of differentailly abundant ASVs per factor
+# Main effects Compartment, Rootstock, Irrigation, Block
+T_num <- length(unique(c(rownames(p[["Compartment_Leaf_vs_Berry"]]), rownames(p[["Compartment_Root_vs_Berry"]]), rownames(p[["Compartment_Soil_vs_Berry"]]))))
 R_num <- length(unique(c(rownames(p[["Rootstock_1103P_vs_Ungrafted"]]), rownames(p[["Rootstock_3309C_vs_Ungrafted"]]), rownames(p[["Rootstock_SO4_vs_Ungrafted"]]))))
 I_num <- length(unique(c(rownames(p[["Irrigation_none_vs_full"]]), rownames(p[["Irrigation_rdi_vs_full"]]))))
 B_num <- length(unique(c(rownames(p[["Block_B_vs_A"]]), rownames(p[["Block_C_vs_A"]]))))
 # Interactions
-RxT_num <- length(unique(c(rownames(p[["TissueLeaf.Rootstock1103P"]]), rownames(p[["TissueRoot.Rootstock1103P"]]), rownames(p[["TissueSoil.Rootstock1103P"]]), rownames(p[["TissueLeaf.Rootstock3309C"]]), rownames(p[["TissueRoot.Rootstock3309C"]]), rownames(p[["TissueSoil.Rootstock3309C"]]), rownames(p[["TissueLeaf.RootstockSO4"]]), rownames(p[["TissueRoot.RootstockSO4"]]), rownames(p[["TissueSoil.RootstockSO4"]]))))
-TxI_num <- length(unique(c(rownames(p[["TissueLeaf.Irrigationnone"]]), rownames(p[["TissueRoot.Irrigationnone"]]), rownames(p[["TissueSoil.Irrigationnone"]]), rownames(p[["TissueLeaf.Irrigationrdi"]]), rownames(p[["TissueRoot.Irrigationrdi"]]), rownames(p[["TissueSoil.Irrigationrdi"]]))))
+RxT_num <- length(unique(c(rownames(p[["CompartmentLeaf.Rootstock1103P"]]), rownames(p[["CompartmentRoot.Rootstock1103P"]]), rownames(p[["CompartmentSoil.Rootstock1103P"]]), rownames(p[["CompartmentLeaf.Rootstock3309C"]]), rownames(p[["CompartmentRoot.Rootstock3309C"]]), rownames(p[["CompartmentSoil.Rootstock3309C"]]), rownames(p[["CompartmentLeaf.RootstockSO4"]]), rownames(p[["CompartmentRoot.RootstockSO4"]]), rownames(p[["CompartmentSoil.RootstockSO4"]]))))
+TxI_num <- length(unique(c(rownames(p[["CompartmentLeaf.Irrigationnone"]]), rownames(p[["CompartmentRoot.Irrigationnone"]]), rownames(p[["CompartmentSoil.Irrigationnone"]]), rownames(p[["CompartmentLeaf.Irrigationrdi"]]), rownames(p[["CompartmentRoot.Irrigationrdi"]]), rownames(p[["CompartmentSoil.Irrigationrdi"]]))))
 RxI_num <- length(unique(c(rownames(p[["Rootstock1103P.Irrigationnone"]]), rownames(p[["Rootstock3309C.Irrigationnone"]]), rownames(p[["RootstockSO4.Irrigationnone"]]), rownames(p[["Rootstock1103P.Irrigationrdi"]]), rownames(p[["Rootstock3309C.Irrigationrdi"]]), rownames(p[["RootstockSO4.Irrigationrdi"]]))))
 
 Number_of_DiffAbund_ASVs_its <- as.data.frame(c(T_num, R_num, I_num, B_num, RxT_num, TxI_num, RxI_num))
-rownames(Number_of_DiffAbund_ASVs_its) <- c( "Tissue", "Rootstock", "Irrigation", "Block", "Rootstock x Tissue", "Tissue x Irrigation", "Rootstock x Irrigation")
+rownames(Number_of_DiffAbund_ASVs_its) <- c( "Compartment", "Rootstock", "Irrigation", "Block", "Rootstock x Compartment", "Compartment x Irrigation", "Rootstock x Irrigation")
 colnames(Number_of_DiffAbund_ASVs_its) <- "num_ASVs"
-Number_of_DiffAbund_ASVs_its <- cbind(Number_of_DiffAbund_ASVs_its, Factor = c("Tissue", "Rootstock", "Irrigation", "Block", "Rootstock x Tissue", "Tissue x Irrigation", "Rootstock x Irrigation"))
-Number_of_DiffAbund_ASVs_its$relabun <- (Number_of_DiffAbund_ASVs_its$num_ASVs / 111)
-TEMP_name <- ggplot(Number_of_DiffAbund_ASVs_its,aes(x=Factor,y=relabun)) + geom_bar(stat="identity",position="dodge",width=0.9) + ylab("Proportion of ASVs responding to each factor") + ylim(0,1) + xlab("Factor") + ggtitle("16s data")
-ggsave(filename = "DESeq_its_prelim.pdf", plot = TEMP_name, units = "in", height = 5, width = 8, path = "Figures")
+Number_of_DiffAbund_ASVs_its <- cbind(Number_of_DiffAbund_ASVs_its, Factor = c("Compartment", "Rootstock", "Irrigation", "Block", "Rootstock x Compartment", "Compartment x Irrigation", "Rootstock x Irrigation"))
+Number_of_DiffAbund_ASVs_its$relabun <- (Number_of_DiffAbund_ASVs_its$num_ASVs / 111) # This 111 number comes from the number of unique taxa from filtering the phyloseq object above
 
-# Rough plotting of log fold changes by factor
+# Get Taxonomy of differentailly abundant ASVs per factor
+# Main effects Compartment, Rootstock, Irrigation, Block
+T_ASV_list <- as.data.frame(unique(c(rownames(p[["Compartment_Leaf_vs_Berry"]]), rownames(p[["Compartment_Root_vs_Berry"]]), rownames(p[["Compartment_Soil_vs_Berry"]]))))
+R_ASV_list <- as.data.frame(unique(c(rownames(p[["Rootstock_1103P_vs_Ungrafted"]]), rownames(p[["Rootstock_3309C_vs_Ungrafted"]]), rownames(p[["Rootstock_SO4_vs_Ungrafted"]]))))
+I_ASV_list <- as.data.frame(unique(c(rownames(p[["Irrigation_none_vs_full"]]), rownames(p[["Irrigation_rdi_vs_full"]]))))
+B_ASV_list <- as.data.frame(unique(c(rownames(p[["Block_B_vs_A"]]), rownames(p[["Block_C_vs_A"]]))))
+# Interactions
+RxT_ASV_list <- as.data.frame(unique(c(rownames(p[["CompartmentLeaf.Rootstock1103P"]]), rownames(p[["CompartmentRoot.Rootstock1103P"]]), rownames(p[["CompartmentSoil.Rootstock1103P"]]), rownames(p[["CompartmentLeaf.Rootstock3309C"]]), rownames(p[["CompartmentRoot.Rootstock3309C"]]), rownames(p[["CompartmentSoil.Rootstock3309C"]]), rownames(p[["CompartmentLeaf.RootstockSO4"]]), rownames(p[["CompartmentRoot.RootstockSO4"]]), rownames(p[["CompartmentSoil.RootstockSO4"]]))))
+TxI_ASV_list <- as.data.frame(unique(c(rownames(p[["CompartmentLeaf.Irrigationnone"]]), rownames(p[["CompartmentRoot.Irrigationnone"]]), rownames(p[["CompartmentSoil.Irrigationnone"]]), rownames(p[["CompartmentLeaf.Irrigationrdi"]]), rownames(p[["CompartmentRoot.Irrigationrdi"]]), rownames(p[["CompartmentSoil.Irrigationrdi"]]))))
+RxI_ASV_list <- as.data.frame(unique(c(rownames(p[["Rootstock1103P.Irrigationnone"]]), rownames(p[["Rootstock3309C.Irrigationnone"]]), rownames(p[["RootstockSO4.Irrigationnone"]]), rownames(p[["Rootstock1103P.Irrigationrdi"]]), rownames(p[["Rootstock3309C.Irrigationrdi"]]), rownames(p[["RootstockSO4.Irrigationrdi"]]))))
+# Get dataframe of all ASV hash number for use in next step
+x <- as.data.frame(tax_table(physeq_its))
+x$ASV_hash <- rownames(x)
+# Main effects Compartment, Rootstock, Irrigation, Block
+T_ASV_list <- x[x$ASV_hash %in% T_ASV_list$uniq, ]
+R_ASV_list <- x[x$ASV_hash %in% R_ASV_list$uniq, ]
+I_ASV_list <- x[x$ASV_hash %in% I_ASV_list$uniq, ]
+B_ASV_list <- x[x$ASV_hash %in% B_ASV_list$uniq, ]
+# Interaction
+RxT_ASV_list <- x[x$ASV_hash %in% RxT_ASV_list$uniq, ]
+TxI_ASV_list <- x[x$ASV_hash %in% TxI_ASV_list$uniq, ]
+RxI_ASV_list <- x[x$ASV_hash %in% RxI_ASV_list$uniq, ]
+# Extracting taxonomy at the class level
+Class_ASV_df <- as.data.frame(bind_rows(summary(T_ASV_list$Class), summary(R_ASV_list$Class), summary(I_ASV_list$Class), summary(B_ASV_list$Class), summary(RxT_ASV_list$Class), summary(TxI_ASV_list$Class), summary(RxI_ASV_list$Class)))
+Class_ASV_df[is.na(Class_ASV_df)] <- 0
+# Merge relative proportion of ASVs df with taxonomy df
+num_tax_ASVs_its <- cbind(Number_of_DiffAbund_ASVs_its, Class_ASV_df)
+# Covert taxonomy counts into proportions
+dim(num_tax_ASVs_its)
+num_tax_ASVs_its[1,c(seq(4,16,1))] <- num_tax_ASVs_its[1,3] * (num_tax_ASVs_its[1,c(seq(4,16,1))] / sum(num_tax_ASVs_its[1,c(seq(4,16,1))]))
+num_tax_ASVs_its[2,c(seq(4,16,1))] <- num_tax_ASVs_its[2,3] * (num_tax_ASVs_its[2,c(seq(4,16,1))] / sum(num_tax_ASVs_its[2,c(seq(4,16,1))]))
+num_tax_ASVs_its[3,c(seq(4,16,1))] <- num_tax_ASVs_its[3,3] * (num_tax_ASVs_its[3,c(seq(4,16,1))] / sum(num_tax_ASVs_its[3,c(seq(4,16,1))]))
+num_tax_ASVs_its[4,c(seq(4,16,1))] <- num_tax_ASVs_its[4,3] * (num_tax_ASVs_its[4,c(seq(4,16,1))] / sum(num_tax_ASVs_its[4,c(seq(4,16,1))]))
+num_tax_ASVs_its[5,c(seq(4,16,1))] <- num_tax_ASVs_its[5,3] * (num_tax_ASVs_its[5,c(seq(4,16,1))] / sum(num_tax_ASVs_its[5,c(seq(4,16,1))]))
+num_tax_ASVs_its[6,c(seq(4,16,1))] <- num_tax_ASVs_its[6,3] * (num_tax_ASVs_its[6,c(seq(4,16,1))] / sum(num_tax_ASVs_its[6,c(seq(4,16,1))]))
+num_tax_ASVs_its[7,c(seq(4,16,1))] <- num_tax_ASVs_its[7,3] * (num_tax_ASVs_its[7,c(seq(4,16,1))] / sum(num_tax_ASVs_its[7,c(seq(4,16,1))]))
+# Gather columns into a single column for use in ggplot
+num_tax_ASVs_its <- gather(num_tax_ASVs_its, key = "Taxon", value = "Freq", -c(Factor,relabun, num_ASVs))
+# Set the factor order of the taxon names
+num_tax_ASVs_its$Taxon <- factor(num_tax_ASVs_its$Taxon, levels = c("Agaricomycetes", "Cystobasidiomycetes", "Dothideomycetes", "Glomeromycetes", "Leotiomycetes", "Microbotryomycetes", "Mortierellomycetes", "Paraglomeromycetes", "Pezizomycetes", "Eurotiomycetes", "Saccharomycetes", "Sordariomycetes", "Tremellomycetes", "NA's"))
+
+
+
+# Plotting of log fold changes by factor
 p <- c()
 for (i in Contrast_list){
   p[[i]] <- as.data.frame(results(DS2_its, cooksCutoff = FALSE, name = i))
@@ -737,75 +843,208 @@ colnames(TxI_lf2c)[1] <- "Log2FoldChange"
 colnames(RxI_lf2c)[1] <- "Log2FoldChange"
 # Add factor column
 R_lf2c["Factor"] = "Rootstock"
-T_lf2c["Factor"] = "Tissue"
+T_lf2c["Factor"] = "Compartment"
 B_lf2c["Factor"] = "Block"
 I_lf2c["Factor"] = "Irrigation"
-TxR_lf2c["Factor"] = "Rootstock x Tissue"
-TxI_lf2c["Factor"] = "Tissue x Irrigation"
+TxR_lf2c["Factor"] = "Rootstock x Compartment"
+TxI_lf2c["Factor"] = "Compartment x Irrigation"
 RxI_lf2c["Factor"] = "Rootstock x Irrigation"
 # Bind by row all dfs
 Log2fold_by_factor_its <- rbind(R_lf2c, T_lf2c, B_lf2c, I_lf2c, TxR_lf2c, TxI_lf2c, RxI_lf2c)
-# Box plot
-ggplot(Log2fold_by_factor_its, aes(x=Factor, y=Log2FoldChange)) + geom_boxplot(outlier.color = "red")
-# Violin plot
-ggplot(Log2fold_by_factor_its, aes(x=Factor, y=Log2FoldChange)) + geom_violin(fill= "green", trim = FALSE, scale = "width") + stat_summary(fun.data=mean_sdl, geom="pointrange") + aes(x = fct_inorder(Factor)) + xlab("Factor")
 
 # Combination bar plot
-Number_of_DiffAbund_ASVs_16s["Marker"] = "16S"
-Number_of_DiffAbund_ASVs_its["Marker"] = "ITS"
-Number_of_DiffAbund_ASVs_both <- rbind(Number_of_DiffAbund_ASVs_16s, Number_of_DiffAbund_ASVs_its)
-Number_of_DiffAbund_ASVs_both$Factor <- as.factor(Number_of_DiffAbund_ASVs_both$Factor)
-Number_of_DiffAbund_ASVs_both$Factor <- factor(Number_of_DiffAbund_ASVs_both$Factor, levels = c("Rootstock", "Tissue", "Irrigation", "Rootstock x Tissue", "Rootstock x Irrigation", "Tissue x Irrigation", "Block"))
-Numb_ASVs_both_plot <- ggplot(Number_of_DiffAbund_ASVs_both, aes(x=Factor,y=relabun, fill = Marker)) + geom_bar(stat="identity",position="dodge",width=0.9, colour="black") + geom_text(aes(label=num_ASVs), position=position_dodge(width=0.9), vjust=-0.25) + ylab("Proportion of ASVs") + ylim(0,1) + scale_fill_manual(name = "Marker", values=c("gray36", "gray80")) + xlab("Source of variation")
-
+num_tax_ASVs_16s$Factor <- factor(num_tax_ASVs_16s$Factor, levels = c("Rootstock", "Compartment", "Irrigation", "Rootstock x Compartment", "Rootstock x Irrigation", "Compartment x Irrigation", "Block"))
+num_tax_ASVs_its$Factor <- factor(num_tax_ASVs_its$Factor, levels = c("Rootstock", "Compartment", "Irrigation", "Rootstock x Compartment", "Rootstock x Irrigation", "Compartment x Irrigation", "Block"))
+Numb_ASVs_16s_plot <- ggplot(data = num_tax_ASVs_16s, aes(x=Factor, y=Freq, fill=Taxon)) + geom_bar(stat="identity", colour="black", lwd=0.2) + scale_fill_manual(name ="Bacterial Phyla", values=taxapallete_16S) + ylab("Proportion of ASVs") + ylim(0,1) 
+Numb_ASVs_its_plot <- ggplot(data = num_tax_ASVs_its, aes(x=Factor, y=Freq, fill=Taxon)) + geom_bar(stat="identity", colour="black", lwd=0.2) + scale_fill_manual(name ="Fungal Class", values=taxapallete_ITS) + ylab("Proportion of ASVs") + ylim(0,1) 
 
 # Combination violin plot
 Log2fold_by_factor_16s["Marker"] = "16S"
 Log2fold_by_factor_its["Marker"] = "ITS"
 Log2fold_by_factor_both <- rbind(Log2fold_by_factor_16s, Log2fold_by_factor_its)
 Log2fold_by_factor_both$Factor <- as.factor(Log2fold_by_factor_both$Factor)
-Log2fold_by_factor_both$Factor <- factor(Log2fold_by_factor_both$Factor, levels = c("Rootstock", "Tissue", "Irrigation", "Rootstock x Tissue", "Rootstock x Irrigation", "Tissue x Irrigation", "Block"))
+Log2fold_by_factor_both$Factor <- factor(Log2fold_by_factor_both$Factor, levels = c("Rootstock", "Compartment", "Irrigation", "Rootstock x Compartment", "Rootstock x Irrigation", "Compartment x Irrigation", "Block"))
 Log2fold_both_plot <- ggplot(Log2fold_by_factor_both, aes(x=Factor, y=Log2FoldChange, fill=Marker)) + geom_violin(trim = FALSE, scale = "width") + stat_summary(fun.data=mean_sdl, geom="pointrange", position = position_dodge(width = 0.9))+ xlab("Factor") + scale_fill_manual(name = "Marker", values=c("gray36", "gray80"))  + labs(y=expression(paste(Log[2]," fold change")), x=("Source of variation"))
 
-Bar_plot_and_log2foldchange_plot <- ggarrange(Numb_ASVs_both_plot, Log2fold_both_plot, nrow = 2, common.legend = TRUE, legend = "right")
-ggsave(filename = "Bar_plot_and_log2foldchange_plot.pdf", plot = Bar_plot_and_log2foldchange_plot, units = "in", height = 12, width = 16, path = "Figures")
+Bar_plot_and_log2foldchange_plot <- (Numb_ASVs_16s_plot | Numb_ASVs_its_plot) / Log2fold_both_plot
+ggsave(filename = "Bar_plot_and_log2foldchange_plot.pdf", plot = Bar_plot_and_log2foldchange_plot, units = "in", height = 12, width = 24, path = "Figures")
 
 
-Bar_plot_and_log2foldchange_plot
+# Mean and Stdev for log2 fold changes for bacteria and fungi
+summary(Log2fold_by_factor_16s)
+sd(Log2fold_by_factor_16s$Log2FoldChange)
+summary(Log2fold_by_factor_its)
+sd(Log2fold_by_factor_its$Log2FoldChange)
 
-# Creating dataframe for plotting of differentially abundant taxa by rootstock and tissue
-otu_table(physeq_16s) <- otu_table(physeq_16s) - 1
-which(colnames(otu_df) == "b467bbf7f9d84b55f768d9100667bb5c")
+# Mean and sd by each factor and interactions 
+tapply(Log2fold_by_factor_16s$Log2FoldChange, Log2fold_by_factor_16s$Factor, mean)
+tapply(Log2fold_by_factor_16s$Log2FoldChange, Log2fold_by_factor_16s$Factor, sd)
+tapply(Log2fold_by_factor_its$Log2FoldChange, Log2fold_by_factor_its$Factor, mean)
+tapply(Log2fold_by_factor_its$Log2FoldChange, Log2fold_by_factor_its$Factor, sd)
+
+# Testing for significant difference in factor log2foldchange means
+TukeyHSD(aov(Log2FoldChange ~ Factor, data = Log2fold_by_factor_16s))
+TukeyHSD(aov(Log2FoldChange ~ Factor, data = Log2fold_by_factor_its))
+
+
+##### 4.0) Specific associations Acetobacterales and Saccharomycetes #####
+# Load QIIME2 objects into a phyloseq class object.
+physeq_16s <- qza_to_phyloseq(features = '16s/ALL/filtered-table-no-mitochondria-no-chloroplast.qza', tree = '16s/ALL/rooted-tree.qza', taxonomy = '16s/ALL/taxonomy.qza', metadata = '16s/ALL/16s_noMockorPosorNeg_metadata.tsv', tmp="C:/tmp")
+physeq_its <- qza_to_phyloseq(features = 'ITS/ALL/filtered-nocontrol-trimmed-table.qza', taxonomy = 'ITS/ALL/taxonomy.qza', metadata = 'ITS/ALL/its_metadata_noControlsorWine.tsv', tmp="C:/tmp")
+
+# Recode factors OWN to Ungrafted.
+physeq_16s@sam_data$Rootstock <- recode_factor(physeq_16s@sam_data$Rootstock, OWN = "Ungrafted")
+physeq_its@sam_data$Rootstock <- recode_factor(physeq_its@sam_data$Rootstock, OWN = "Ungrafted")
+physeq_16s@sam_data$Irrigation <- recode_factor(physeq_16s@sam_data$Irrigation, none = "None", rdi = "RDI", full = "Full")
+physeq_its@sam_data$Irrigation <- recode_factor(physeq_its@sam_data$Irrigation, none = "None", rdi = "RDI", full = "Full")
+
+# Rarefy the samples to 1500 (required as this was not done in previously in QIIME).
+rare_physeq_16s <- rarefy_even_depth(physeq_16s, sample.size = 1500, replace = FALSE, rngseed = 10031993) 
+### Removing 7 biological samples
+
+# Rarefy the samples to 5000 (required as this was not done in previously in QIIME).
+rare_physeq_its <- rarefy_even_depth(physeq_its, sample.size = 5000, replace = FALSE, rngseed = 10031993) 
+## Removing 7 biological samples
+
+## Fix taxonomy strings 
+# Bacteria
+rare_physeq_16s@tax_table[,1]  <- gsub('D_.__', '', rare_physeq_16s@tax_table[,1])
+tax_table(rare_physeq_16s) <- as.matrix(separate(as.data.frame(rare_physeq_16s@tax_table[,1]), col = Kingdom, sep = ";", into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")))
+# Fungi
+rare_physeq_its@tax_table[,1] <- gsub('.__', '', rare_physeq_its@tax_table[,1])
+tax_table(rare_physeq_its) <- as.matrix(separate(as.data.frame(rare_physeq_its@tax_table[,1]), col = Kingdom, sep = ";", into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")))
+
+# Bacteria: Acetobacterales
+# Subset to just Acetobacterales
+acetobacterales_physeq16s <- subset_taxa(rare_physeq_16s, Order == "Acetobacterales")
+plot_bar(acetobacterales_physeq16s, "ExtractionNum", "Abundance", "Genus", facet_grid="Rootstock~.")
+# Check proportion of the abudance is driven by Gluconobacter and Acetobacter
+# sum(rowSums(t(as.data.frame(otu_table(acetobacterales_physeq16s))))) #6809
+# Gluconobacter_physeq16s <- subset_taxa(acetobacterales_physeq16s, Genus == "Gluconobacter")
+# sum(rowSums(t(as.data.frame(otu_table(Gluconobacter_physeq16s))))) #5678
+# Acetobacter_physeq16s <- subset_taxa(acetobacterales_physeq16s, Genus == "Acetobacter")
+# sum(rowSums(t(as.data.frame(otu_table(Acetobacter_physeq16s))))) #417
+
+# Collapse reads for members of Acetobacterales into a single sum
+x <- t(as.data.frame(otu_table(acetobacterales_physeq16s)))
+x <- as.data.frame(rowSums(x))
+Aceto_abund <- cbind(x, sample_data(rare_physeq_16s))
+
+# Rename rowsum column to Acetobacterales
+colnames(Aceto_abund)[1] <- "Acetobacterales_abundance"
+
+# Make abundance relative by dividing by the rarefaction amount (1500)
+Aceto_abund$Acetobacterales_abundance <- Aceto_abund$Acetobacterales_abundance/1500
+
+# Linear model full
+lm_acetobacterales_full <- lm(Acetobacterales_abundance ~ Compartment*Rootstock*Irrigation + Block, data = Aceto_abund)
+Anova(lm_acetobacterales_full, type = "III")
+
+# Post-hoc testing
+pairs(emmeans(lm_acetobacterales_full, ~ Rootstock | Compartment| Irrigation))
+
+# Plots to investigate significant results of lm's
+# Three way interaction from full model
+Acetobacterales_abundance.graph <- ggplot(Aceto_abund, aes(Compartment, Acetobacterales_abundance, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + xlab ("Compartment") + ylab("Acetobacterales relative abundance") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + theme(legend.position = "right")
+Acetobacterales_abundance.graph <- Acetobacterales_abundance.graph + facet_wrap("Irrigation")
+ggsave("Acetobacterales_abundance.png", Acetobacterales_abundance.graph, units = "in", height = 6, width = 12)
+
+# Fungi: Saccharomycetes
+# Subset to just Saccharomycetes
+Saccharomycetes_physeqits <- subset_taxa(rare_physeq_its, Class == "Saccharomycetes")
+# Quick plots
+plot_bar(Saccharomycetes_physeqits, "ExtractionNum", "Abundance", "Family", facet_grid="Rootstock~.")
+plot_bar(Saccharomycetes_physeqits, "ExtractionNum", "Abundance", "Genus", facet_grid="Rootstock~.")
+#Candida_physeqits <- subset_taxa(Saccharomycetes_physeqits, Genus == "Candida")
+#sum(rowSums(t(as.data.frame(otu_table(Candida_physeqits))))) #744
+#Hanseniaspora_physeqits <- subset_taxa(Saccharomycetes_physeqits, Genus == "Hanseniaspora")
+#sum(rowSums(t(as.data.frame(otu_table(Hanseniaspora_physeqits))))) #13562
+#Pichia_physeqits <- subset_taxa(Saccharomycetes_physeqits, Genus == "Pichia")
+#sum(rowSums(t(as.data.frame(otu_table(Pichia_physeqits))))) #10578
+
+# Collapse reads for members of Acetobacterales into a single sum
+x <- t(as.data.frame(otu_table(Saccharomycetes_physeqits)))
+x <- as.data.frame(rowSums(x))
+Sacchro_abund <- cbind(x, sample_data(rare_physeq_its))
+
+# Rename rowsum column to Acetobacterales
+colnames(Sacchro_abund)[1] <- "Saccharomycetes_abundance"
+
+# Make abundance relative by dividing by the rarefaction amount (1500)
+Sacchro_abund$Saccharomycetes_abundance <- Sacchro_abund$Saccharomycetes_abundance/5000
+
+# Linear model full
+lm_saccharomycetes_full <- lm(Saccharomycetes_abundance ~ Compartment*Rootstock*Irrigation + Block, data = Sacchro_abund)
+Anova(lm_saccharomycetes_full, type = "III")
+
+# Post-hoc testing
+pairs(emmeans(lm_saccharomycetes_full, ~ Rootstock | Compartment))
+pairs(emmeans(lm_saccharomycetes_full, ~ Rootstock))
+
+# Plot
+Saccharomycetes_abundance.graph <- ggplot(Sacchro_abund, aes(Compartment, Saccharomycetes_abundance, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + xlab ("Compartment") + ylab("Saccharomycetes relative abundance") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + theme(legend.position = "right")
+Saccharomycetes_abundance.graph <- Saccharomycetes_abundance.graph + facet_wrap("Irrigation")
+
+ggplot(Aceto_abund, aes(Compartment, Acetobacterales_abundance, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + xlab ("Compartment") + ylab("Acetobacterales relative abundance") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + theme(legend.position = "right")
+ggplot(Sacchro_abund, aes(Irrigation, Saccharomycetes_abundance, fill = Rootstock)) + geom_boxplot(outlier.shape = NA) + xlab ("Rootstock") + ylab("Saccharomycetes relative abundance") + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + theme(legend.position = "right")
+
+Aceto_sacchro.graph <- ggarrange(Acetobacterales_abundance.graph, Saccharomycetes_abundance.graph, nrow = 2, labels ="AUTO")
+ggsave("Acetobacterales_Saccharomycetes_byRandI.png", Aceto_sacchro.graph, units = "in", height = 8, width = 12)
+
+# Looking at both aceto and sacchro
+X <- data.frame("Sample" = rownames(Sacchro_abund), "Saccharomycetes_abund" = Sacchro_abund$Saccharomycetes_abundance, "Rootstock" = Sacchro_abund$Rootstock, "Compartment" = Sacchro_abund$Compartment)
+Y <- data.frame("Sample" = rownames(Aceto_abund), "Acetobacterales_abund" = Aceto_abund$Acetobacterales_abundance, "Rootstock" = Aceto_abund$Rootstock, "Compartment" = Aceto_abund$Compartment)
+
+# Check which samples are not in both lists
+setdiff(X$Sample, Y$Sample)
+
+# Merge only samples present within both lists 
+combo_aceto_sacchro <- merge(X, Y, by = "Sample")
+
+Compartment.abundance.Ace.Sac <- ggplot(combo_aceto_sacchro, aes(Saccharomycetes_abund, Acetobacterales_abund, color = Compartment.x, fill = Compartment.x)) +
+  geom_smooth(size = 2, method = lm) + stat_cor(method = "spearman") +
+  geom_point(size = 3, shape = 21, color = "Black") +
+  labs(fill = "Compartment", color = "Compartment", x = "Saccharomycetes relative abundance", y = "Acetobacterales relative abundance")
+
+Compartment_by_rootstock.abundance.Ace.Sac <- ggplot(combo_aceto_sacchro, aes(Saccharomycetes_abund, Acetobacterales_abund, color = Compartment.x, fill= Compartment.x)) +
+  geom_smooth(size = 2, method = lm) + 
+  stat_cor(method = "spearman") +
+  geom_point(size = 3, shape = 21, color = "Black") + facet_wrap("Rootstock.x") +
+  labs(fill = "Compartment", color = "Compartment", x = "Saccharomycetes relative abundance", y = "Acetobacterales relative abundance")
 
 ##### 5.0) Combining plots and saving #####
+
 #Alpha diversity plots#
-#16s by Tissue and rootsock
-alpha_16s <- ggarrange(fphd_byR_T_16s, even_byR_T_16s, obso_byR_T_16s, shan_byR_T_16s, labels = c("A","B","C","D"), ncol = 2 , nrow = 2, common.legend = TRUE, legend = "right")
+#16s by Compartment and rootsock
+alpha_16s <- ggarrange(fphd_byR_T_16s, simpI_byR_T_16s, obso_byR_T_16s, shan_byR_T_16s, labels = c("A","B","C","D"), ncol = 2 , nrow = 2, common.legend = TRUE, legend = "right")
 ggsave(filename = "16s_alphadiv.pdf", plot = alpha_16s, units = "in", height = 12, width = 12, path = "Figures")
-#its by Tissue and rootstock
-alpha_its <- ggarrange(even_byR_T_its, obso_byR_T_its, shan_byR_T_its, labels = c("A","B","C"), common.legend = TRUE, legend = "right")
+
+#its by Compartment and rootstock
+alpha_its <- ggarrange(simpI_byR_T_its, obso_byR_T_its, shan_byR_T_its, labels = c("A","B","C"), common.legend = TRUE, legend = "right")
 ggsave(filename = "its_alphadiv.pdf", plot = alpha_its, units = "in", height = 12, width = 12, path = "Figures")
-#Combine by Tissue
-alpha_16s_its <- ggarrange(fphd_16s, shan_16s, obso_16s, even_16s, shan_its, obso_its, even_its, labels = c("A","B","C","D","E","F","G","H","I"))
+
+#Combine by Compartment and Rootstock
+ggarrange(simpI_byR_T_16s, obso_byR_T_16s, shan_byR_T_16s, fphd_byR_T_16s, simpI_byR_T_its, obso_byR_T_its, shan_byR_T_its, labels = c("A","B","C","D","E","F","G"), ncol = 4 , nrow = 2, common.legend = TRUE, legend = "right")
+
+#Combine by Compartment
+alpha_16s_its <- ggarrange(shan_16s, obso_16s, fphd_16s, shan_its, obso_its, labels = c("A","B","C","D","E"), ncol = 3, nrow = 2)
 ggsave(filename = "16s-its_alphadiv.pdf", plot = alpha_16s_its, units = "in", height = 12, width = 12, path = "Figures")
-#Breakaway diversity
-brek_fig <- ggarrange(brek_16s, brek_its, labels = c("A", "B"), ncol = 2)
-ggsave(filename = "Breakaway_div_both.pdf", plot = brek_fig, units = "in", height = 5, width = 8, path = "Figures")
 
 #Taxonomic bar plots#
-#16s and ITS by tissue
+#16s and ITS by Compartment
 taxabp_16s_its <- ggarrange(taxa_barplot16s, taxa_barplotits, labels = c("A", "B"), ncol = 2)
 ggsave(filename = "16s-its_taxonomic_barplot.pdf", plot = taxabp_16s_its, units = "in", height = 6, width = 12, path = "Figures")
 
-#16s by tissue and rootstock
+#16s by Compartment and rootstock
 taxabp_16s <- ggarrange(taxa_barplot16s_S04, taxa_barplot16s_3309C, taxa_barplot16s_1103P, taxa_barplot16s_Ungrafted, labels = c("   S04", "3309C", "1103P", "  Ungrafted"), label.x = 0.15, common.legend = TRUE, legend = "right")
 ggsave(filename = "16s_taxonomic_barplot.pdf", plot = taxabp_16s, units = "in", height = 12, width = 12, path = "Figures")
 
-#ITS by tissue and rootstock
+#ITS by Compartment and rootstock
 taxabp_its<- ggarrange(taxa_barplotits_S04, taxa_barplotits_3309C, taxa_barplotits_1103P, taxa_barplotits_Ungrafted, labels = c("   S04", "3309C", "1103P", "  Ungrafted"), label.x = 0.15, common.legend = TRUE, legend = "right")
 ggsave(filename = "its_taxonomic_barplot.pdf", plot = taxabp_its, units = "in", height = 12, width = 12, path = "Figures")
 
 #PCoAs#
+
 #16S
 #weighted unifrac
 PCoA_16s_wunif <- ggarrange(PCoA_1_2_wunif_16s, PCoA_1_3_wunif_16s, labels = c("A", "B"), ncol = 2, common.legend = TRUE, legend = "right")
@@ -829,240 +1068,28 @@ PCoA_its_bray <- ggarrange(PCoA_1_2_bray_its, PCoA_1_3_bray_its, labels = c("A",
 ggsave(filename = "its_PCoA_bray.pdf", plot = PCoA_its_bray, units = "in", height = 6, width = 12, path = "Figures")
 
 # Figure 2
-PCoA_fig2 <- ggarrange(PCoA_1_2_uunif_16s, PCoA_1_2_bray_its, taxa_barplot16s, taxa_barplotits,  labels = c("A", "B", "C", "D"), ncol = 2, nrow = 2, legend = "right")
-ggsave(filename = "Figure2_unweightedUnifrac1and2_bray1and2.png", plot = PCoA_fig2, units = "in", height = 12, width = 12, path = "Figures")
+## Compartment combo figure, simpson diversity, PCoAs, and Taxonomic barplots
+Compartment_16s_combo <- ggarrange(simpI_16s, PCoA_1_2_uunif_16s_c, taxa_barplot16s, widths = c(1,1.5,1), ncol = 3, labels = c("A", "B", "C"))
+Compartment_its_combo <- ggarrange(simpI_its, PCoA_1_2_bray_its_c, taxa_barplotits,  widths = c(1,1.5,1), ncol = 3, labels = c("D", "E", "F"))
+Compartment_16s_its <- ggarrange(Compartment_16s_combo, Compartment_its_combo, nrow = 2)
+ggsave(filename = "Compartment_16s_its_simp_PCoA_taxabarplot.png", plot = Compartment_16s_its, units = "in", height = 18, width = 24, path = "Figures")
+ggsave(filename = "Compartment_16s_its_simp_PCoA_taxabarplot.pdf", plot = Compartment_16s_its, units = "in", height = 18, width = 24, path = "Figures")
 
-# Code that might be useful in reviews
+# Figure 3
+## Rootstock combo figure, simpson diversity with individual rootstock barplots by tissue
+#16s by Compartment and rootstock
+taxabp_16s <- ggarrange(taxa_barplot16s_S04, taxa_barplot16s_3309C, taxa_barplot16s_1103P, taxa_barplot16s_Ungrafted, labels = c("   S04", "3309C", "1103P", "  Ungrafted"), label.x = 0.15, common.legend = TRUE, legend = "right", ncol = 4, nrow = 1)
+taxabp_16s <- ggarrange(simpI_byR_T_16s, taxabp_16s, labels = c("A", "B"), widths = c(0.5,2))
+#ggsave(filename = "16s_taxonomic_barplot_w_simpson.pdf", plot = taxabp_16s, units = "in", height = 12, width = 24, path = "Figures")
+#ITS by Compartment and rootstock
+taxabp_its <- ggarrange(taxa_barplotits_S04, taxa_barplotits_3309C, taxa_barplotits_1103P, taxa_barplotits_Ungrafted, labels = c("   S04", "3309C", "1103P", "  Ungrafted"), label.x = 0.15, common.legend = TRUE, legend = "right", ncol = 4, nrow = 1)
+taxabp_its <- ggarrange(simpI_byR_T_its, taxabp_its, labels = c("C", "D"),  widths = c(0.5,2))
+#ggsave(filename = "its_taxonomic_barplot.pdf", plot = taxabp_its, units = "in", height = 12, width = 24, path = "Figures")
+#16s/ITS Together
+taxabp_16s_its <- ggarrange(taxabp_16s, taxabp_its, nrow = 2)
+ggsave(filename = "Rootstock_simp_taxonomicBP.pdf", plot = taxabp_16s_its, units = "in", height = 18, width = 24, path = "Figures")
 
-# Test between QIIME2 and Phyloseq rarification and alpha diversity calcalutions
-# This code might be handy if a reviewer is concerned that alpha diversity measures were calcaulated on a QIIME2 rareified ASV table
-# and beta diversity measures were calcautled on a Phyloseq ASV Table. The chart below shows that the difference between these is
-# negligible, I choose to stick with QIIME2 as it supports a broader range of alpha diversity measures (i.e. faith's phylo)
-# TEMP <- estimate_richness(rare_physeq_16s, split = TRUE, measures = NULL)
-# TEMP <- cbind(TEMP, rare_physeq_16s@sam_data)
-# ggplot(TEMP, aes(TissueType, Observed)) + geom_boxplot(outlier.shape = NA) + ggtitle("16S") + theme(plot.title = element_text(hjust = 0.5)) + geom_jitter(width = 0.25) + xlab ("Tissue") + ylab("Observed ASVs")
-
-# Function to plot corncob result by otu without removing outliers
-# PLOT_OTU_corncob<- function(otu_number) {
-#  TEMP <- as.data.frame(physeq_its@otu_table[otu_number,])
-#  TEMP_long <- t(TEMP)
-#  TEMP_long_2 <- cbind(TEMP_long, physeq_its@sam_data)
-#  ggplot(TEMP_long_2, aes(TissueType, TEMP_long_2[,1], fill= Rootstock)) + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + scale_y_continuous(name="Abundance") + xlab("Tissue") + theme(legend.position="right", axis.title = element_text(size = 14), axis.text = element_text(size = 12), plot.title = element_text(size=22)) + ggtitle(otu_number)
-# }
-
-# # Make subset of data by tissuetype, this way we are testing for differences
-# # that are the effect of rootstock without tissue type being a confunding factor.
-# Berry_16s<- subset_samples(physeq_16s, TissueType=="Berry")
-# Leaf_16s<- subset_samples(physeq_16s, TissueType=="Leaf")
-# Soil_16s<- subset_samples(physeq_16s, TissueType=="Soil")
-# Root_16s<- subset_samples(physeq_16s, TissueType=="Root")
-# 
-# # DESEQ2 berry 16s
-# DS2_16s<- phyloseq_to_deseq2(Berry_16s, ~ Rootstock)
-# DS2_16s<- DESeq(DS2_16s, test="Wald", fitType = "parametric")
-# res = results(DS2_16s, cooksCutoff = FALSE)
-# sigtab = res[which(res$padj < 0.01), ]
-# sigtab_berry_16s = cbind(as(sigtab, "data.frame"), as(tax_table(physeq_16s)[rownames(sigtab), ], "matrix"))
-# sigtab_berry_16s
-# 
-# # DESEQ2 leaf 16s
-# DS2_16s<- phyloseq_to_deseq2(Leaf_16s, ~ Rootstock)
-# DS2_16s<- DESeq(DS2_16s, test="Wald", fitType = "parametric")
-# res = results(DS2_16s, cooksCutoff = FALSE)
-# sigtab = res[which(res$padj < 0.01), ]
-# sigtab_leaf_16s = cbind(as(sigtab, "data.frame"), as(tax_table(physeq_16s)[rownames(sigtab), ], "matrix"))
-# sigtab_leaf_16s
-# 
-# # DESEQ2 soil 16s
-# DS2_16s<- phyloseq_to_deseq2(Soil_16s, ~ Rootstock)
-# DS2_16s<- DESeq(DS2_16s, test="Wald", fitType = "parametric")
-# res = results(DS2_16s, cooksCutoff = FALSE)
-# sigtab = res[which(res$padj < 0.01), ]
-# sigtab_soil_16s = cbind(as(sigtab, "data.frame"), as(tax_table(physeq_16s)[rownames(sigtab), ], "matrix"))
-# # sigtab_soil_16s
-# 
-# # DESEQ2 root 16s
-# DS2_16s<- phyloseq_to_deseq2(Root_16s, ~ Rootstock)
-# DS2_16s<- DESeq(DS2_16s, test="Wald", fitType = "parametric")
-# res = results(DS2_16s, cooksCutoff = FALSE)
-# sigtab = res[which(res$padj < 0.01), ]
-# sigtab_root_16s = cbind(as(sigtab, "data.frame"), as(tax_table(physeq_16s)[rownames(sigtab), ], "matrix"))
-# sigtab_root_16s
-# 
-# 
-# # Creating dataframe for plotting of differentially abundant taxa by rootstock and tissue
-# otu_table(physeq_16s) <- otu_table(physeq_16s) - 1
-# otu_matrix <- as(otu_table(physeq_16s), "matrix")
-# if(taxa_are_rows(physeq_16s)){otu_matrix<- t(otu_matrix)}
-# otu_df <- as.data.frame(otu_matrix)
-# 
-# which(colnames(otu_df) == "e9e2b7d11dd4cef36a1d5f3677574931")
-# 
-# specific_otu_df <- data.frame(row.names = rownames(otu_df), "ADD_NAME" = otu_df[,"e9e2b7d11dd4cef36a1d5f3677574931"], "Rootstock" = physeq_16s@sam_data$Rootstock, "TissueType" = physeq_16s@sam_data$TissueType)
-# s16_diff_abun_taxa_bp<- ggplot(specific_otu_df[which(specific_otu_df$TissueType != "Leaf" & specific_otu_df$TissueType != "Berry"),], aes(TissueType, ADD_NAME, fill= Rootstock)) + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + scale_y_continuous(name="Abundance", breaks = c(0,80,160,240,320,400), limits = c(0,400)) + xlab("Tissue") + ggtitle("ASV 452 (Order: Rhizobiales)") + theme(legend.position="right", axis.title = element_text(size = 14), axis.text = element_text(size = 12), plot.title = element_text(size=22))
-# 
-# # good examples ROOT e4e8962b9fe62868270bb1c8b0429891   ebf7dc25ef54e67b73d2c9a53244a838   d9be11723b6d824ccd900c865fddbe41
-# # good example Berry 7726eecd3a974455ae6f8c080caf8f5d
-# # good example Soil e9e2b7d11dd4cef36a1d5f3677574931
-
-# # Make subset of data by tissuetype, this way we are testing for differences
-# # that are the effect of rootstock without tissue type being a cofunding factor.
-# Berry_its<- subset_samples(physeq_its, TissueType=="Berry")
-# Leaf_its<- subset_samples(physeq_its, TissueType=="Leaf")
-# Soil_its<- subset_samples(physeq_its, TissueType=="Soil")
-# Root_its<- subset_samples(physeq_its, TissueType=="Root")
-# 
-# # DESEQ2 berry its
-# DS2_its<- phyloseq_to_deseq2(Berry_its, ~ Rootstock)
-# DS2_its<- DESeq(DS2_its, test="Wald", fitType = "parametric")
-# res = results(DS2_its, cooksCutoff = FALSE)
-# sigtab = res[which(res$padj < 0.05), ]
-# sigtab_berry_its = cbind(as(sigtab, "data.frame"), as(tax_table(physeq_its)[rownames(sigtab), ], "matrix"))
-# sigtab_berry_its
-# 
-# # DESEQ2 leaf its
-# DS2_its<- phyloseq_to_deseq2(Leaf_its, ~ Rootstock)
-# DS2_its<- DESeq(DS2_its, test="Wald", fitType = "parametric")
-# res = results(DS2_its, cooksCutoff = FALSE)
-# sigtab = res[which(res$padj < 0.01), ]
-# sigtab_leaf_its = cbind(as(sigtab, "data.frame"), as(tax_table(physeq_its)[rownames(sigtab), ], "matrix"))
-# sigtab_leaf_its
-# 
-# # DESEQ2 soil its
-# DS2_its<- phyloseq_to_deseq2(Soil_its, ~ Rootstock)
-# DS2_its<- DESeq(DS2_its, test="Wald", fitType = "parametric")
-# res = results(DS2_its, cooksCutoff = FALSE)
-# sigtab = res[which(res$padj < 0.01), ]
-# sigtab_soil_its = cbind(as(sigtab, "data.frame"), as(tax_table(physeq_its)[rownames(sigtab), ], "matrix"))
-# sigtab_soil_its
-# 
-# # DESEQ2 root its
-# DS2_its<- phyloseq_to_deseq2(Root_its, ~ Rootstock)
-# DS2_its<- DESeq(DS2_its, test="Wald", fitType = "parametric")
-# res = results(DS2_its, cooksCutoff = FALSE)
-# sigtab = res[which(res$padj < 0.01), ]
-# sigtab_root_its = cbind(as(sigtab, "data.frame"), as(tax_table(physeq_its)[rownames(sigtab), ], "matrix"))
-# sigtab_root_its
-# 
-# # Creating dataframe for plotting of differentially abundant taxa by rootstock and tissue
-# otu_table(physeq_its) <- otu_table(physeq_its) - 1
-# otu_matrix <- as(otu_table(physeq_its), "matrix")
-# if(taxa_are_rows(physeq_its)){otu_matrix<- t(otu_matrix)}
-# otu_df <- as.data.frame(otu_matrix)
-# 
-# which(colnames(otu_df) == "ab5e682bab43be7d10eb2082ef8ae281")
-# 
-# specific_otu_df <- data.frame(row.names = rownames(otu_df), "ADD_NAME" = otu_df[,"ab5e682bab43be7d10eb2082ef8ae281"], "Rootstock" = physeq_its@sam_data$Rootstock, "TissueType" = physeq_its@sam_data$TissueType)
-# 
-# its_diff_abun_taxa_bp <- ggplot(specific_otu_df[which(specific_otu_df$TissueType != "Leaf"),], aes(TissueType, ADD_NAME, fill= Rootstock)) + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2)) + scale_fill_manual(name = "Rootstock", values=zoe_palette) + scale_y_continuous(name="Abundance", breaks = c(0,1200,2400,3600,4800,6000)) + xlab("Tissue") + ggtitle("ASV 58 (Order: Saccharomycetales)") + theme(legend.position="right", axis.title = element_text(size = 14), axis.text = element_text(size = 12), plot.title = element_text(size=22))
-# 
-# # Good examples berry b93271b97699bdbf400e0eb32b000a45    4a3f37e7e5c8d56bb929058f4efe1cfe    108362b3a9fcb289f305252e77a942f5   08cc4ea90d7e0b633f0e4df857c4ae7b
-# # Good example soil ab5e682bab43be7d10eb2082ef8ae281
-# 
-# # Linear model on taxa that will be presented on the poster XXX
-# Anova(lm(ADD_NAME ~ TissueType*Rootstock, data = specific_otu_df), type = "III")
-# 
-# # Save file for use on poster XXX
-# ggsave(filename = "/Figures/its_diff_abun_taxa_bp.pdf", plot = its_diff_abun_taxa_bp, units = "in", height = 6, width = 6)
-
-# ##### 4.0) Differential abundance analysis corncob  #####
-# 
-# #### 4.1) 16s #####
-# # Clean import of phyloseq object
-# physeq_16s <- qza_to_phyloseq('16s/ALL/filtered-table-no-mitochondria-no-chloroplast.qza','16s/ALL/rooted-tree.qza','16s/ALL/taxonomy.qza','16s/ALL/16s_noMockorPosorNeg_metadata.tsv', tmp="C:/tmp")
-# 
-# # recode factors OWN to Ungrafted
-# physeq_16s@sam_data$Rootstock <- recode_factor(physeq_16s@sam_data$Rootstock , OWN = "Ungrafted")
-# 
-# # Fix issue with Silva taxonomy strings before conducting DESEQ2 on slices of the 
-# # phyloseq 16s object.
-# physeq_16s@tax_table[,1]  <- gsub('D_.__', '', physeq_16s@tax_table[,1])
-# tax_table(physeq_16s) <- as.matrix(separate(as.data.frame(physeq_16s@tax_table[,1]), col = Kingdom, sep = ";", into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")))
-# 
-# # Cleaning the names of ASVs to avoid issues with varible names (R does not like varibles that start with numbers)
-# physeq_16s <- clean_taxa_names(physeq_16s)
-# 
-# corncob_null <- bbdml(formula = OTU793 ~ 1 , phi.formula = ~ 1, data = physeq_16s)
-# corncob <- bbdml(formula = OTU793 ~ TissueType + Rootstock + IrrigationLevel, phi.formula = ~ 1, data = physeq_16s)
-# plot(corncob, total = TRUE, color = "Rootstock")
-# summary(corncob)
-# 
-# lrtest(mod_null = corncob_null, mod = corncob)
-# 
-# physeq_16s@sam_data
-# set.seed(1)
-# da_analysis <- differentialTest(formula = ~ Rootstock + Block + TissueType,
-#                                 phi.formula = ~ 1,
-#                                 formula_null = ~ Rootstock + Block + TissueType,
-#                                 phi.formula_null = ~ 1,
-#                                 test = "Wald", boot = FALSE,
-#                                 data = physeq_16s,
-#                                 fdr_cutoff = 0.05)
-# 
-# da_analysis$significant_taxa
-# otu_to_taxonomy(OTU = da_analysis$significant_taxa, data = physeq_16s)
-# da_analysis$p_fdr
-# plot(da_analysis)
-# which(is.na(da_analysis$p)) %>% names
-# 
-# 
-# ##### 4.2) ITS #####
-# # clean import of phyloseq ITS object
-# physeq_its <- qza_to_phyloseq('ITS/ALL/filtered-nocontrol-trimmed-table.qza', taxonomy = 'ITS/ALL/taxonomy.qza', metadata = 'ITS/ALL/its_metadata_noControlsorWine.tsv', tmp="C:/tmp")
-# #LINUX physeq_its <- qza_to_phyloseq('ITS/ALL/filtered-nocontrol-trimmed-table.qza', taxonomy = 'ITS/ALL/taxonomy.qza', metadata = 'ITS/ALL/its_metadata_noControlsorWine.tsv')
-# 
-# # recode factors OWN to Ungrafted
-# physeq_its@sam_data$Rootstock <- recode_factor(physeq_its@sam_data$Rootstock , OWN = "Ungrafted")
-# # Fix issue with UNITE taxonomy strings before conducting DESEQ2 on slices of the 
-# # phyloseq 16s object.
-# physeq_its@tax_table[,1] <- gsub('.__', '', physeq_its@tax_table[,1])
-# tax_table(physeq_its) <- as.matrix(separate(as.data.frame(physeq_its@tax_table[,1]), col = Kingdom, sep = ";", into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")))
-# 
-# # Cleaning the names of ASVs to avoid issues with varible names (R does not like varibles that start with numbers)
-# physeq_its <- clean_taxa_names(physeq_its)
-# 
-# corncob_null <- bbdml(formula = OTU307 ~ 1 , phi.formula = ~ 1, data = physeq_its)
-# corncob <- bbdml(formula = OTU307 ~ Rootstock + Block + TissueType, phi.formula = ~ 1, data = physeq_its)
-# summary(corncob)
-# plot(corncob, total = TRUE, color = "Rootstock")
-# 
-# 
-# 
-# 
-# PLOT_OTU_corncob_anomalized(896, grp_by = "IrrigationLevel")
-# 
-# da_analysis <- differentialTest(formula = ~ Rootstock + Block + TissueType,
-#                                 phi.formula = ~ Rootstock + Block + TissueType,
-#                                 formula_null = ~ 1,
-#                                 phi.formula_null = ~ Rootstock + Block + TissueType,
-#                                 test = "Wald", boot = FALSE,
-#                                 data = physeq_its,
-#                                 fdr_cutoff = 0.05)
-# 
-# Y <- da_analysis$significant_taxa
-# as.data.frame(Y)
-# 
-# name_list<- otu_to_taxonomy(OTU = da_analysis$significant_taxa, data = physeq_its)
-# da_analysis$p_fdr
-# plot(da_analysis, level = "Class")
-# which(is.na(da_analysis$p)) %>% names
-# 
-# name_list
-# # For posthoc test of a specific ASV found using DESEQ2
-# otu_matrix <- as(otu_table(physeq_16s), "matrix")
-# if(taxa_are_rows(physeq_16s)){otu_matrix<- t(otu_matrix)}
-# otu_df <- as.data.frame(otu_matrix)
-# which(colnames(otu_df) == "7726eecd3a974455ae6f8c080caf8f5d")
-# specific_otu_df <- data.frame(row.names = rownames(otu_df), "OTU_NAME" = otu_df[,"7726eecd3a974455ae6f8c080caf8f5d"], "Rootstock" = physeq_16s@sam_data$Rootstock, "Tissue" = physeq_16s@sam_data$Tissue, "Irrigation" = physeq_16s@sam_data$Irrigation, "Block" = physeq_16s@sam_data$Block)
-# # For posthoc test of a specific ASV found using DESEQ2
-# # OTU_abundance_model <- lm(OTU_NAME ~ Tissue*Rootstock*Irrigation + Block, data = specific_otu_df)
-# # Anova(lm(OTU_NAME ~ Tissue*Rootstock*Irrigation + Block, data = specific_otu_df), type = "III")
-# # R16s.emm <- as.data.frame(pairs(emmeans(OTU_abundance_model, ~Tissue:Rootstock)))
-# # R16s.emm <- transform(R16s.emm, comps=reshape2::colsplit(contrast, pattern = "-", names = c('c1', 'c2')))
-# # R16s.emm <- transform(R16s.emm, c1=reshape2::colsplit(comps.c1, pattern = ",", names = c('i1', 'p1')))
-# # R16s.emm <- transform(R16s.emm, c2=reshape2::colsplit(comps.c2, pattern = ",", names = c('i2', 'p2')))
-# # R16s.emm$c2.p2 <- trimws(R16s.emm$c2.p2, which='left')
-# # R16s.emm$c1.p1 <- trimws(R16s.emm$c1.p1, which='right')
-# # R16s.emm <- R16s.emm[R16s.emm$c1.p1 == R16s.emm$c2.p2,] %>% select(contrast:p.value)
-# # R16s.emm$padj <- p.adjust(R16s.emm$p.value, method='fdr')
-# # R16s.emm[R16s.emm$padj < 0.05,]
+# Figure 4
+# Acetobacterales
+Combo_correlation_plot <- ggarrange(Compartment.abundance.Ace.Sac, common.legend = TRUE, legend = "right")
+ggsave("Correlation_plots_ACETO_SACCHRO_by_compartment.pdf", Combo_correlation_plot, width = 10, height = 8)
